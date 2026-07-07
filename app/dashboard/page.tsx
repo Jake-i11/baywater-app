@@ -2,20 +2,33 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, AlertTriangle, CheckCircle2, XCircle, TrendingUp, TrendingDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { User } from "@supabase/supabase-js";
+import {
+  getDisciplineStatistics,
+  getViolationStatistics,
+  getTradeQualityBreakdown,
+  calculateTradeMetrics,
+  calculateDisciplineStreaks,
+  calculateDisciplineTrend,
+  getCurrentProcessStatus
+} from "@/lib/market-enrichment";
 
-type Trade = {
-  id: string;
-  ticker: string;
-  entry: string;
-  exit: string;
-  size: string;
-  time: string;
-  violations: string;
-  created_at: string;
-};
+  type Trade = {
+    id: string;
+    ticker: string;
+    entry: string;
+    exit: string;
+    size: string;
+    time: string;
+    violations: string;
+    created_at: string;
+    direction?: string;
+    entry_time?: string;
+    exit_time?: string;
+    realized_pl?: string;
+  };
 
 export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null);
@@ -40,7 +53,33 @@ export default function Dashboard() {
     });
   }, []);
 
+  // Calculate statistics
   const totalTrades = trades.length;
+
+  // Filter completed trades (have both entry and exit)
+  const completedTrades = trades.filter(t => t.entry && t.exit && t.realized_pl);
+
+  // Calculate P/L statistics
+  const plValues = completedTrades.map(t => {
+    const pl = parseFloat(t.realized_pl || '0');
+    return isNaN(pl) ? 0 : pl;
+  });
+
+  const winningTrades = plValues.filter(pl => pl > 0);
+  const losingTrades = plValues.filter(pl => pl < 0);
+
+  const winRate = totalTrades === 0
+    ? 0
+    : Math.round((winningTrades.length / completedTrades.length) * 100) || 0;
+
+  const totalPL = plValues.reduce((sum, pl) => sum + pl, 0);
+  const avgWin = winningTrades.length > 0
+    ? (winningTrades.reduce((sum, pl) => sum + pl, 0) / winningTrades.length).toFixed(2)
+    : '0.00';
+  const avgLoss = losingTrades.length > 0
+    ? (losingTrades.reduce((sum, pl) => sum + pl, 0) / losingTrades.length).toFixed(2)
+    : '0.00';
+
   const violationTrades = trades.filter((t) => {
     const v = JSON.parse(t.violations || "[]");
     return v.length > 0;
@@ -110,6 +149,12 @@ export default function Dashboard() {
           <a href="/" className="text-sm text-white/50 hover:text-white">
             Analyze
           </a>
+          <a href="/dashboard/edge" className="text-sm text-white/50 hover:text-white">
+            Your Edge
+          </a>
+          <a href="/dashboard/coach" className="text-sm text-white/50 hover:text-white">
+            AI Coach
+          </a>
           <span className="text-sm font-medium text-white">History</span>
           <button
             onClick={async () => {
@@ -134,9 +179,41 @@ export default function Dashboard() {
           </Card>
           <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
             <CardContent className="pt-6">
-              <p className="text-xs text-white/50">Violations</p>
+              <p className="text-xs text-white/50">Win rate</p>
+              <p className="mt-1 text-3xl font-bold text-emerald-400">
+                {winRate}%
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
+            <CardContent className="pt-6">
+              <p className="text-xs text-white/50">Total P/L</p>
+              <p
+                className={`mt-1 text-3xl font-bold ${
+                  totalPL >= 0 ? "text-emerald-400" : "text-red-400"
+                }`}
+              >
+                ${totalPL.toFixed(2)}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* SECOND STATS ROW */}
+        <div className="grid grid-cols-3 gap-4">
+          <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
+            <CardContent className="pt-6">
+              <p className="text-xs text-white/50">Avg Win</p>
+              <p className="mt-1 text-3xl font-bold text-emerald-400">
+                ${avgWin}
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
+            <CardContent className="pt-6">
+              <p className="text-xs text-white/50">Avg Loss</p>
               <p className="mt-1 text-3xl font-bold text-red-400">
-                {violationTrades.length}
+                ${avgLoss}
               </p>
             </CardContent>
           </Card>
@@ -153,6 +230,392 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/* DISCIPLINE & PROCESS INTELLIGENCE */}
+        <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-emerald-400" />
+              Process Intelligence
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Discipline Statistics */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs text-white/50">Current Discipline Score</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-2xl font-bold">
+                    {getDisciplineStatistics(trades).currentDisciplineScore}
+                  </span>
+                  <span className="text-sm text-white/60">/ 100</span>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-white/50">Average Discipline Score</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-2xl font-bold">
+                    {getDisciplineStatistics(trades).averageDisciplineScore}
+                  </span>
+                  <span className="text-sm text-white/60">/ 100</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Discipline Trend */}
+            <div>
+              <p className="text-xs text-white/50">Discipline Trend</p>
+              <div className="flex items-center gap-2 mt-1">
+                {getDisciplineStatistics(trades).disciplineTrend === 'improving' && (
+                  <TrendingUp className="h-5 w-5 text-emerald-400" />
+                )}
+                {getDisciplineStatistics(trades).disciplineTrend === 'declining' && (
+                  <TrendingDown className="h-5 w-5 text-red-400" />
+                )}
+                {getDisciplineStatistics(trades).disciplineTrend === 'stable' && (
+                  <span className="h-5 w-5 text-amber-400">→</span>
+                )}
+                <span className="text-sm font-medium capitalize">
+                  {getDisciplineStatistics(trades).disciplineTrend}
+                </span>
+                {getDisciplineStatistics(trades).disciplineTrend === 'declining' && (
+                  <span className="text-xs text-red-400">
+                    (After losing streaks)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Process Metrics */}
+            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10">
+              <div>
+                <p className="text-xs text-white/50">Rule Compliance</p>
+                <p className="mt-1 text-xl font-bold text-emerald-400">
+                  {complianceRate}%
+                </p>
+                <p className="text-xs text-white/60">
+                  {getDisciplineStatistics(trades).totalViolations} violations
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-white/50">Trades Following Rules</p>
+                <p className="mt-1 text-xl font-bold text-emerald-400">
+                  {totalTrades - violationTrades.length} / {totalTrades}
+                </p>
+                <p className="text-xs text-white/60">
+                  {Math.round(((totalTrades - violationTrades.length) / totalTrades) * 100)}%
+                </p>
+              </div>
+            </div>
+
+            {/* Insight */}
+            {totalTrades > 0 && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-white/5 border border-white/10">
+                <CheckCircle2 className="h-4 w-4 mt-0.5 text-emerald-400 flex-shrink-0" />
+                <p className="text-sm text-white/80">
+                  You followed your rules on {complianceRate}% of trades.
+                  {getDisciplineStatistics(trades).disciplineTrend === 'improving' &&
+                    ' Your discipline is improving over time.'}
+                  {getDisciplineStatistics(trades).disciplineTrend === 'declining' &&
+                    ' Focus on maintaining discipline during losing streaks.'}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* DISCIPLINE STREAKS SECTION */}
+        <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <span className="h-5 w-5 text-emerald-400">🔥</span>
+              Discipline Streaks
+            </CardTitle>
+            <p className="text-xs text-white/50 mt-1">
+              Rewarding consistent rule-following, not profitable outcomes
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Current Streak */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs text-white/50">Current Discipline Streak</p>
+                <div className="flex items-center gap-2 mt-1">
+                  {calculateDisciplineStreaks(trades).streakActive ? (
+                    <span className="h-6 w-6 text-emerald-400">🔥</span>
+                  ) : (
+                    <XCircle className="h-6 w-6 text-red-400" />
+                  )}
+                  <span className="text-2xl font-bold">
+                    {calculateDisciplineStreaks(trades).currentStreak}
+                  </span>
+                  <span className="text-sm text-white/60">
+                    {calculateDisciplineStreaks(trades).currentStreak === 1 ? 'trade' : 'trades'}
+                  </span>
+                </div>
+                <p className="text-xs text-white/60 mt-1">
+                  {calculateDisciplineStreaks(trades).streakActive
+                    ? 'Active streak - keep it going!'
+                    : 'Streak broken - get back on track'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-white/50">Best Discipline Streak</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="h-6 w-6 text-yellow-400">🏆</span>
+                  <span className="text-2xl font-bold">
+                    {calculateDisciplineStreaks(trades).bestStreak}
+                  </span>
+                  <span className="text-sm text-white/60">trades</span>
+                </div>
+                <p className="text-xs text-white/60 mt-1">
+                  Your personal best streak
+                </p>
+              </div>
+            </div>
+
+            {/* Discipline Trend */}
+            <div>
+              <p className="text-xs text-white/50">Discipline Trend</p>
+              <div className="flex items-center gap-2 mt-1">
+                {calculateDisciplineTrend(trades).trendDirection === 'improving' && (
+                  <TrendingUp className="h-5 w-5 text-emerald-400" />
+                )}
+                {calculateDisciplineTrend(trades).trendDirection === 'declining' && (
+                  <TrendingDown className="h-5 w-5 text-red-400" />
+                )}
+                {calculateDisciplineTrend(trades).trendDirection === 'stable' && (
+                  <span className="h-5 w-5 text-amber-400">→</span>
+                )}
+                <span className="text-sm font-medium">
+                  {calculateDisciplineTrend(trades).trendDescription}
+                </span>
+              </div>
+              <div className="flex items-center gap-4 mt-2">
+                <div>
+                  <p className="text-xs text-white/50">Recent (10 trades)</p>
+                  <p className="text-lg font-bold">
+                    {calculateDisciplineTrend(trades).recentAverage}/100
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-white/50">Previous (10 trades)</p>
+                  <p className="text-lg font-bold">
+                    {calculateDisciplineTrend(trades).olderAverage}/100
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-white/50">Change</p>
+                  <p className={`text-lg font-bold ${calculateDisciplineTrend(trades).trendPercentage >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {calculateDisciplineTrend(trades).trendPercentage >= 0 ? '+' : ''}{calculateDisciplineTrend(trades).trendPercentage}%
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Violation Streaks */}
+            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10">
+              <div>
+                <p className="text-xs text-white/50">Current Violation Streak</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <AlertTriangle className="h-6 w-6 text-red-400" />
+                  <span className="text-2xl font-bold">
+                    {calculateDisciplineStreaks(trades).currentViolationStreak}
+                  </span>
+                  <span className="text-sm text-white/60">
+                    {calculateDisciplineStreaks(trades).currentViolationStreak === 1 ? 'trade' : 'trades'}
+                  </span>
+                </div>
+                <p className="text-xs text-white/60 mt-1">
+                  {calculateDisciplineStreaks(trades).currentViolationStreak > 0
+                    ? 'Consecutive trades with violations'
+                    : 'No current violation streak'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-white/50">Longest Violation Streak</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-2xl font-bold text-red-400">
+                    {calculateDisciplineStreaks(trades).longestViolationStreak}
+                  </span>
+                  <span className="text-sm text-white/60">trades</span>
+                </div>
+                <p className="text-xs text-white/60 mt-1">
+                  {calculateDisciplineStreaks(trades).mostCommonViolation
+                    ? `Most common: ${calculateDisciplineStreaks(trades).mostCommonViolation}`
+                    : 'No violation patterns detected'}
+                </p>
+              </div>
+            </div>
+
+            {/* Current Process Status */}
+            <div className="pt-4 border-t border-white/10">
+              <p className="text-xs text-white/50">Current Process Status</p>
+              <div className="flex items-center gap-3 mt-2">
+                {getCurrentProcessStatus(trades).status === 'excellent' && (
+                  <CheckCircle2 className="h-6 w-6 text-emerald-400" />
+                )}
+                {getCurrentProcessStatus(trades).status === 'good' && (
+                  <CheckCircle2 className="h-6 w-6 text-green-400" />
+                )}
+                {getCurrentProcessStatus(trades).status === 'fair' && (
+                  <span className="h-6 w-6 text-amber-400">⚠️</span>
+                )}
+                {getCurrentProcessStatus(trades).status === 'poor' && (
+                  <XCircle className="h-6 w-6 text-red-400" />
+                )}
+                <div>
+                  <p className="text-lg font-bold capitalize">
+                    {getCurrentProcessStatus(trades).status} process
+                  </p>
+                  <p className="text-sm text-white/60">
+                    {getCurrentProcessStatus(trades).description}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Streak Insight */}
+            {calculateDisciplineStreaks(trades).currentStreak > 0 && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-white/5 border border-white/10">
+                <span className="h-5 w-5 text-emerald-400 mt-0.5">💡</span>
+                <p className="text-sm text-white/80">
+                  {calculateDisciplineStreaks(trades).streakActive
+                    ? `You're on a ${calculateDisciplineStreaks(trades).currentStreak} trade discipline streak! This shows consistent rule-following regardless of trade outcomes.`
+                    : `Your ${calculateDisciplineStreaks(trades).currentStreak} trade streak was broken. Focus on getting back to disciplined trading.`}
+                  {calculateDisciplineStreaks(trades).bestStreak > 0 &&
+                    ` Your best streak is ${calculateDisciplineStreaks(trades).bestStreak} trades.`}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* VIOLATION COST INTELLIGENCE */}
+        <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-400" />
+              Violation Cost Intelligence
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs text-white/50">Total Money Lost from Violations</p>
+                <p className="mt-1 text-xl font-bold text-red-400">
+                  ${Math.abs(getViolationStatistics(trades).totalViolationCost).toFixed(2)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-white/50">Number of Violation Trades</p>
+                <p className="mt-1 text-xl font-bold text-red-400">
+                  {getViolationStatistics(trades).totalViolationTrades}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs text-white/50">Most Expensive Violation</p>
+                <p className="mt-1 text-xl font-bold text-red-400">
+                  ${Math.abs(getViolationStatistics(trades).mostExpensiveViolation).toFixed(2)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-white/50">Dangerous Wins</p>
+                <p className="mt-1 text-xl font-bold text-amber-400">
+                  {getViolationStatistics(trades).dangerousWinsCount}
+                </p>
+                <p className="text-xs text-white/60">
+                  Bad process, profitable outcome
+                </p>
+              </div>
+            </div>
+
+            {/* Insight */}
+            {getViolationStatistics(trades).totalViolationCost < 0 && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+                <AlertTriangle className="h-4 w-4 mt-0.5 text-red-400 flex-shrink-0" />
+                <p className="text-sm text-red-300">
+                  Rule violations cost you ${Math.abs(getViolationStatistics(trades).totalViolationCost).toFixed(2)}.
+                  {getViolationStatistics(trades).dangerousWinsCount > 0 &&
+                    ` You had ${getViolationStatistics(trades).dangerousWinsCount} dangerous wins where bad process created profitable outcomes.`}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* TRADE QUALITY BREAKDOWN */}
+        <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <span className="h-5 w-5 text-blue-400">📊</span>
+              Trade Quality Breakdown
+            </CardTitle>
+            <p className="text-xs text-white/50 mt-1">
+              Understanding that good process ≠ always profitable, bad process ≠ always losing
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                  <span className="text-sm font-medium">A) Profitable + Disciplined</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-400" />
+                  <span className="text-sm font-medium">B) Profitable + Undisciplined</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-blue-400" />
+                  <span className="text-sm font-medium">C) Losing + Disciplined</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <XCircle className="h-4 w-4 text-red-400" />
+                  <span className="text-sm font-medium">D) Losing + Undisciplined</span>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-bold text-emerald-400">
+                    {getTradeQualityBreakdown(trades).categoryA}
+                  </span>
+                  <span className="text-xs text-white/60">trades</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-bold text-amber-400">
+                    {getTradeQualityBreakdown(trades).categoryB}
+                  </span>
+                  <span className="text-xs text-white/60">trades</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-bold text-blue-400">
+                    {getTradeQualityBreakdown(trades).categoryC}
+                  </span>
+                  <span className="text-xs text-white/60">trades</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-bold text-red-400">
+                    {getTradeQualityBreakdown(trades).categoryD}
+                  </span>
+                  <span className="text-xs text-white/60">trades</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Insight */}
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-white/5 border border-white/10">
+              <span className="h-5 w-5 text-blue-400 mt-0.5">💡</span>
+              <p className="text-sm text-white/80">
+                Category C trades (Losing + Disciplined) are good trades with bad outcomes.
+                Category B trades (Profitable + Undisciplined) are dangerous wins that reinforce bad habits.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* TRADE TABLE */}
         <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
@@ -180,6 +643,7 @@ export default function Dashboard() {
                       <th className="pb-3 pr-4">Entry</th>
                       <th className="pb-3 pr-4">Exit</th>
                       <th className="pb-3 pr-4">Size</th>
+                      <th className="pb-3 pr-4">P/L</th>
                       <th className="pb-3">Violations</th>
                     </tr>
                   </thead>
@@ -192,7 +656,8 @@ export default function Dashboard() {
                           key={trade.id}
                           className={`border-b border-white/5 ${
                             hasViolation ? "bg-red-500/5" : ""
-                          }`}
+                          } cursor-pointer hover:bg-white/5`}
+                          onClick={() => window.location.href = `/dashboard/trade/${trade.id}`}
                         >
                           <td className="py-3 pr-4 text-white/40">
                             {new Date(trade.created_at).toLocaleDateString()}
@@ -208,6 +673,13 @@ export default function Dashboard() {
                           </td>
                           <td className="py-3 pr-4 text-white/70">
                             {trade.size ?? "—"}
+                          </td>
+                          <td className="py-3 pr-4 text-white/70">
+                            {trade.realized_pl ? (
+                              <span className={parseFloat(trade.realized_pl) >= 0 ? "text-emerald-400" : "text-red-400"}>
+                                ${parseFloat(trade.realized_pl).toFixed(2)}
+                              </span>
+                            ) : "—"}
                           </td>
                           <td className="py-3">
                             {hasViolation ? (

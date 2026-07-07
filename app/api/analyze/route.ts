@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export async function POST(request: NextRequest) {
   try {
@@ -9,58 +10,62 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    if (!GEMINI_API_KEY) {
+      return NextResponse.json({ error: "Gemini API key not configured" }, { status: 500 });
+    }
+
+    // Convert file to base64 for Gemini
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     const base64Image = buffer.toString("base64");
-    const mediaType = file.type || "image/png";
+    const mimeType = file.type || "image/png";
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": process.env.ANTHROPIC_API_KEY!,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-3-sonnet-20240229",
-        max_tokens: 500,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: {
-                  type: "base64",
-                  media_type: mediaType,
-                  data: base64Image,
-                },
-              },
-              {
-                type: "text",
-                text: `Extract the following trade information from this screenshot:
-- ticker (stock symbol)
-- entry price (as a number)
-- exit price (as a number)
-- size (position size, as a number)
-- time (time of trade, e.g., "9:30 AM")
-
-Return ONLY a valid JSON object with these fields. If something is missing, use null.`,
-              },
-            ],
-          },
-        ],
-      }),
+    // Initialize Gemini client
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
     });
 
-    const data = await response.json();
-    const rawText = data.content?.[0]?.text || "";
+    // Generate content with image and text prompt
+    const result = await model.generateContent([
+      {
+        inlineData: {
+          data: base64Image,
+          mimeType: mimeType
+        }
+      },
+      {
+        text: `Analyze this trading screenshot and extract the following information:
 
-    let trade = null;
+- ticker: The stock symbol (e.g., "AAPL", "TSLA")
+- entry: The entry price as a string
+- exit: The exit price as a string
+- size: The position size as a string
+- tradeDate: The date of the trade if visible (YYYY-MM-DD format), or null if not visible
+- tradeTime: The time of the trade if visible (e.g., "9:30 AM"), or null if not visible
+- timezone: The timezone if visible, otherwise use "UTC"
+
+Return ONLY valid JSON. If any value is not visible in the screenshot, return null for that field.`
+      }
+    ]);
+
+    // Get the JSON response
+    const response = await result.response;
+    const tradeData = response.text();
+
+    // Parse and validate the JSON
+    let trade;
     try {
-      trade = JSON.parse(rawText);
-    } catch {
+      trade = JSON.parse(tradeData);
+    } catch (parseError) {
+      console.error("Failed to parse Gemini response:", parseError);
       return NextResponse.json({ error: "Could not parse trade data" }, { status: 422 });
+    }
+
+    // Validate required fields
+    if (!trade.ticker || !trade.entry || !trade.exit || !trade.size || !trade.timezone) {
+      return NextResponse.json({ error: "Missing required trade data" }, { status: 422 });
     }
 
     return NextResponse.json(trade);
