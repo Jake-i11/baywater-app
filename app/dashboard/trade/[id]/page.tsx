@@ -9,6 +9,7 @@ import { AIReplay } from "@/components/AIReplay";
 import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
 import { calculateTradeOutcomeCategory } from "@/lib/market-enrichment";
+import { getTradePatternAnalysis } from "@/lib/trade-pattern-utils";
 
 // Helper functions for process review display
 function getDisciplineDescription(score: number): string {
@@ -99,7 +100,9 @@ export default function TradeDetailPage({ params }: { params: { id: string } }) 
   const [trade, setTrade] = useState<Trade | null>(null);
   const [loading, setLoading] = useState(true);
   const [candles, setCandles] = useState<any[]>([]);
-  const [chartLoading, setChartLoading] = useState(false);
+const [chartLoading, setChartLoading] = useState(false);
+const [patternAnalysis, setPatternAnalysis] = useState<any>(null);
+const [patternLoading, setPatternLoading] = useState(true);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
@@ -118,13 +121,20 @@ export default function TradeDetailPage({ params }: { params: { id: string } }) 
         if (tradeData) {
           setTrade(tradeData);
 
-          // Fetch chart data if we have ticker and times
-          if (tradeData.ticker && (tradeData.entry_time || tradeData.exit_time)) {
-            await fetchChartData(tradeData.ticker, tradeData.entry_time || tradeData.exit_time || '');
-          }
+// Fetch chart data if we have ticker and times
+if (tradeData.ticker && (tradeData.entry_time || tradeData.exit_time)) {
+  await fetchChartData(tradeData.ticker, tradeData.entry_time || tradeData.exit_time || '');
+}
+
+// Fetch pattern analysis
+if (tradeData) {
+  const analysis = await getTradePatternAnalysis(tradeData.id);
+  setPatternAnalysis(analysis);
+}
         }
       }
-      setLoading(false);
+setLoading(false);
+setPatternLoading(false);
     });
   }, [params.id]);
 
@@ -532,6 +542,176 @@ export default function TradeDetailPage({ params }: { params: { id: string } }) 
                   No chart data available for this time period
                 </div>
               )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* HISTORICAL PATTERN MATCH SECTION */}
+        {patternAnalysis && (
+          <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <span className="h-5 w-5 text-blue-400">🔍</span>
+                Historical Pattern Match
+              </CardTitle>
+              <p className="text-xs text-white/50 mt-1">
+                How this trade compares to your historical winners and losers
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Overall Pattern Verdict */}
+              <div>
+                <p className="text-xs text-white/50">Overall Pattern Verdict</p>
+                <div className="flex items-center gap-3 mt-2">
+                  {patternAnalysis.winner_similarity_score > patternAnalysis.loser_similarity_score ? (
+                    <span className="h-8 w-8 flex-shrink-0 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                      <span className="text-emerald-400 font-bold">🟢</span>
+                    </span>
+                  ) : patternAnalysis.loser_similarity_score > patternAnalysis.winner_similarity_score ? (
+                    <span className="h-8 w-8 flex-shrink-0 rounded-full bg-red-500/20 flex items-center justify-center">
+                      <span className="text-red-400 font-bold">🔴</span>
+                    </span>
+                  ) : (
+                    <span className="h-8 w-8 flex-shrink-0 rounded-full bg-amber-500/20 flex items-center justify-center">
+                      <span className="text-amber-400 font-bold">🟡</span>
+                    </span>
+                  )}
+
+                  <div>
+                    {patternAnalysis.winner_similarity_score > patternAnalysis.loser_similarity_score ? (
+                      <p className="text-lg font-bold text-emerald-400">
+                        This trade resembles your historical winners
+                      </p>
+                    ) : patternAnalysis.loser_similarity_score > patternAnalysis.winner_similarity_score ? (
+                      <p className="text-lg font-bold text-red-400">
+                        This trade resembles your historical losers
+                      </p>
+                    ) : (
+                      <p className="text-lg font-bold text-amber-400">
+                        Mixed historical pattern
+                      </p>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-4 mt-2 text-sm">
+                      <div>
+                        <p className="text-xs text-white/50">Winner Similarity</p>
+                        <p className="font-semibold text-emerald-400">
+                          {patternAnalysis.winner_similarity_score || 0}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-white/50">Loser Similarity</p>
+                        <p className="font-semibold text-red-400">
+                          {patternAnalysis.loser_similarity_score || 0}%
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Why It Matches Winners */}
+              {patternAnalysis.matching_factors && patternAnalysis.matching_factors.length > 0 && (
+                <div>
+                  <p className="text-xs text-white/50">Why this matches your winners</p>
+                  <div className="mt-2 space-y-2">
+                    {patternAnalysis.matching_factors.map((factor: string, i: number) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <span className="mt-1 h-4 w-4 flex-shrink-0 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                          <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                        </span>
+                        <p className="text-sm text-white/90">{factor}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Why It Matches Losers */}
+              {(patternAnalysis.risk_flags && patternAnalysis.risk_flags.length > 0) || (patternAnalysis.differing_factors && patternAnalysis.differing_factors.length > 0) ? (
+                <div>
+                  <p className="text-xs text-white/50">Warning signs from past losing trades</p>
+                  <div className="mt-2 space-y-2">
+                    {patternAnalysis.risk_flags?.map((flag: string, i: number) => (
+                      <div key={`risk-${i}`} className="flex items-start gap-2">
+                        <span className="mt-1 h-4 w-4 flex-shrink-0 rounded-full bg-red-500/20 flex items-center justify-center">
+                          <AlertTriangle className="h-3 w-3 text-red-400" />
+                        </span>
+                        <p className="text-sm text-white/90">{flag}</p>
+                      </div>
+                    ))}
+                    {patternAnalysis.differing_factors?.map((factor: string, i: number) => (
+                      <div key={`diff-${i}`} className="flex items-start gap-2">
+                        <span className="mt-1 h-4 w-4 flex-shrink-0 rounded-full bg-amber-500/20 flex items-center justify-center">
+                          <span className="text-amber-400 text-xs">⚠</span>
+                        </span>
+                        <p className="text-sm text-white/90">{factor}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Historical Edge Card */}
+              {patternAnalysis.edge_conditions && patternAnalysis.edge_conditions.length > 0 && (
+                <div className="p-4 rounded-lg bg-white/5 border border-white/10">
+                  <p className="text-sm font-medium text-white/80">Your Edge</p>
+                  <div className="mt-2 space-y-2">
+                    {patternAnalysis.edge_conditions.map((edge: string, i: number) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <span className="mt-0.5 h-2 w-2 flex-shrink-0 rounded-full bg-emerald-500" />
+                        <p className="text-sm text-white/90">{edge}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Similar Historical Trades */}
+              {patternAnalysis.similar_trade_ids && patternAnalysis.similar_trade_ids.length > 0 && (
+                <div>
+                  <p className="text-xs text-white/50">Similar Historical Trades</p>
+                  <div className="mt-2 space-y-3">
+                    <div>
+                      <p className="text-sm font-medium text-emerald-400 mb-2">Past Winning Examples</p>
+                      {patternAnalysis.similar_trade_ids.slice(0, 3).map((tradeId: string, i: number) => (
+                        <div key={`win-${i}`} className="flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 mb-1">
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm font-medium">{tradeId}</span>
+                            <span className="text-xs text-white/60">Similarity: {patternAnalysis.similarity_scores?.[i] || 'N/A'}%</span>
+                          </div>
+                          <span className="text-xs text-emerald-400">Winner</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {patternAnalysis.losing_pattern_matches && patternAnalysis.losing_pattern_matches > 0 && (
+                      <div className="mt-3">
+                        <p className="text-sm font-medium text-red-400 mb-2">Past Losing Examples</p>
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-red-500/10 border border-red-500/20">
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm font-medium">Similar losing trades</span>
+                            <span className="text-xs text-white/60">Count: {patternAnalysis.losing_pattern_matches}</span>
+                          </div>
+                          <span className="text-xs text-red-400">Loser patterns</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* No Pattern Analysis Available */}
+        {!patternAnalysis && !patternLoading && (
+          <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
+            <CardContent className="text-center py-8">
+              <p className="text-sm text-white/60">Not enough historical trades yet.</p>
+              <p className="text-xs text-white/40 mt-2">
+                Keep logging trades to unlock personalized pattern recognition.
+              </p>
             </CardContent>
           </Card>
         )}

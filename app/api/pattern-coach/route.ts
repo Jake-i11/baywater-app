@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { generatePatternSummaryData } from '@/lib/pattern-analysis';
+import { getOrCreateTraderProfile, updateTraderProfile, generateTraderProfileUpdate } from '@/lib/profile-utils';
 
 /**
  * Generate AI coaching prompt with structured pattern data
@@ -16,7 +17,7 @@ import { generatePatternSummaryData } from '@/lib/pattern-analysis';
  * @param userId User ID
  * @returns Formatted prompt for Gemini API
  */
-function buildCoachingPrompt(patternData: any, userId: string): string {
+function buildCoachingPrompt(patternData: any, userId: string, traderProfile: any): string {
   // Format evidence for each pattern category
   const formatEvidence = (items: any[]) => {
     return items.map(item => {
@@ -41,7 +42,7 @@ function buildCoachingPrompt(patternData: any, userId: string): string {
   };
 
   return `
-You are an elite trading performance coach analyzing a trader's personal historical data.
+You are an elite trading performance coach analyzing a trader's personal historical data with long-term memory.
 
 IMPORTANT RULES:
 1. Never make unsupported claims. Every insight must cite specific statistics.
@@ -49,6 +50,20 @@ IMPORTANT RULES:
 3. Be specific about sample sizes and confidence levels.
 4. Focus on process quality, not just outcomes.
 5. Never invent insights - only analyze the provided data.
+6. Reference the trader's history and patterns when relevant.
+7. Act as a long-term coach who remembers this specific trader.
+
+TRADER PROFILE CONTEXT:
+${traderProfile ? `
+- Trading Style: ${traderProfile.trading_style || 'Not yet established'}
+- Preferred Setups: ${traderProfile.preferred_setups?.length > 0 ? traderProfile.preferred_setups.join(', ') : 'None identified'}
+- Risk Profile: ${traderProfile.risk_profile || 'Not yet established'}
+- Strengths: ${traderProfile.strengths?.length > 0 ? traderProfile.strengths.join(' | ') : 'None identified'}
+- Recurring Mistakes: ${traderProfile.recurring_mistakes?.length > 0 ? traderProfile.recurring_mistakes.join(' | ') : 'None identified'}
+- Behavioral Patterns: ${traderProfile.behavioral_patterns?.length > 0 ? traderProfile.behavioral_patterns.join(' | ') : 'None identified'}
+- Current Focus Area: ${traderProfile.current_focus_area || 'Not yet established'}
+- Total Trades Analyzed: ${traderProfile.total_trades_analyzed || 0}
+` : 'No previous trading history available - establishing baseline'}
 
 TRADE PATTERN ANALYSIS:
 
@@ -205,8 +220,11 @@ export async function POST(request: Request) {
     // Generate pattern statistics
     const patternData = await generatePatternSummaryData(user_id);
 
-    // Build the coaching prompt
-    const prompt = buildCoachingPrompt(patternData, user_id);
+    // Get or create trader profile
+    const traderProfile = await getOrCreateTraderProfile(user_id);
+
+    // Build the coaching prompt with trader profile context
+    const prompt = buildCoachingPrompt(patternData, user_id, traderProfile);
 
     // Generate AI coaching using Gemini
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -268,6 +286,33 @@ export async function POST(request: Request) {
           next_focus: coachingInsights.next_focus
         }
       ]);
+
+    // Update trader profile based on this coaching session
+    try {
+      // Get recent trades for profile update
+      const recentTrades = trades.slice(0, 20); // Use last 20 trades for profile update
+
+      // Generate AI-powered profile update
+      const profileUpdate = await generateTraderProfileUpdate(user_id, recentTrades, traderProfile);
+
+      // Apply the profile update
+      await updateTraderProfile(user_id, {
+        trading_style: profileUpdate.updatedProfile.trading_style,
+        preferred_setups: profileUpdate.updatedProfile.preferred_setups,
+        risk_profile: profileUpdate.updatedProfile.risk_profile,
+        strengths: profileUpdate.updatedProfile.strengths,
+        recurring_mistakes: profileUpdate.updatedProfile.recurring_mistakes,
+        behavioral_patterns: profileUpdate.updatedProfile.behavioral_patterns,
+        current_focus_area: profileUpdate.updatedProfile.current_focus_area,
+        coaching_notes: profileUpdate.updatedProfile.coaching_notes,
+        total_trades_analyzed: profileUpdate.updatedProfile.total_trades_analyzed
+      });
+
+      console.log('Trader profile updated with changes:', profileUpdate.changesMade);
+    } catch (profileUpdateError) {
+      console.error('Failed to update trader profile:', profileUpdateError);
+      // Continue even if profile update fails - don't break coaching
+    }
 
     if (storeError) {
       console.error('Failed to store coaching insights:', storeError);

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getOrCreateTraderProfile, updateTraderProfile, generateTraderProfileUpdate } from '@/lib/profile-utils';
 
 interface TradeData {
   id: string;
@@ -92,8 +93,33 @@ export async function GET(request: Request) {
     const chartData = await chartResponse.json();
     const candles: CandleData[] = chartData.candles || [];
 
-    // Generate replay analysis using Gemini
-    const analysis = await generateReplayAnalysis(trade, candles);
+    // Get trader profile for personalized analysis
+    const traderProfile = await getOrCreateTraderProfile(trade.user_id);
+
+    // Generate replay analysis using Gemini with trader profile context
+    const analysis = await generateReplayAnalysis(trade, candles, traderProfile);
+
+    // Update trader profile based on this trade analysis
+    try {
+      const profileUpdate = await generateTraderProfileUpdate(trade.user_id, [trade], traderProfile);
+
+      await updateTraderProfile(trade.user_id, {
+        trading_style: profileUpdate.updatedProfile.trading_style,
+        preferred_setups: profileUpdate.updatedProfile.preferred_setups,
+        risk_profile: profileUpdate.updatedProfile.risk_profile,
+        strengths: profileUpdate.updatedProfile.strengths,
+        recurring_mistakes: profileUpdate.updatedProfile.recurring_mistakes,
+        behavioral_patterns: profileUpdate.updatedProfile.behavioral_patterns,
+        current_focus_area: profileUpdate.updatedProfile.current_focus_area,
+        coaching_notes: profileUpdate.updatedProfile.coaching_notes,
+        total_trades_analyzed: profileUpdate.updatedProfile.total_trades_analyzed
+      });
+
+      console.log('Trader profile updated from replay analysis:', profileUpdate.changesMade);
+    } catch (profileUpdateError) {
+      console.error('Failed to update trader profile from replay analysis:', profileUpdateError);
+      // Continue even if profile update fails
+    }
 
     return NextResponse.json(analysis);
 
@@ -103,7 +129,7 @@ export async function GET(request: Request) {
   }
 }
 
-async function generateReplayAnalysis(trade: TradeData, candles: CandleData[]): Promise<ReplayAnalysis> {
+async function generateReplayAnalysis(trade: TradeData, candles: CandleData[], traderProfile: any = null): Promise<ReplayAnalysis> {
   try {
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
     if (!GEMINI_API_KEY) {
@@ -136,7 +162,19 @@ Candle ${index + 1} (${time.toLocaleTimeString()}):
 
     // Build comprehensive prompt for Gemini
     const prompt = `
-You are an elite trading performance coach analyzing a completed trade with full candle-by-candle data.
+You are an elite trading performance coach analyzing a completed trade with full candle-by-candle data and long-term memory of this trader.
+
+TRADER PROFILE CONTEXT:
+${traderProfile ? `
+- Trading Style: ${traderProfile.trading_style || 'Not yet established'}
+- Preferred Setups: ${traderProfile.preferred_setups?.length > 0 ? traderProfile.preferred_setups.join(', ') : 'None identified'}
+- Risk Profile: ${traderProfile.risk_profile || 'Not yet established'}
+- Strengths: ${traderProfile.strengths?.length > 0 ? traderProfile.strengths.join(' | ') : 'None identified'}
+- Recurring Mistakes: ${traderProfile.recurring_mistakes?.length > 0 ? traderProfile.recurring_mistakes.join(' | ') : 'None identified'}
+- Behavioral Patterns: ${traderProfile.behavioral_patterns?.length > 0 ? traderProfile.behavioral_patterns.join(' | ') : 'None identified'}
+- Current Focus Area: ${traderProfile.current_focus_area || 'Not yet established'}
+- Total Trades Analyzed: ${traderProfile.total_trades_analyzed || 0}
+` : 'No previous trading history available - establishing baseline'}
 
 TRADE DETAILS:
 - Ticker: ${trade.ticker}
@@ -165,7 +203,8 @@ ANALYSIS REQUIREMENTS:
 6. Score decision quality (entry, exit, risk management)
 7. Separate process from outcome - a winning trade with violations is still a bad trade
 8. Be specific about what the trader did well and what needs improvement
-9. Provide a clear, actionable lesson
+9. Reference the trader's historical patterns and recurring issues when relevant
+10. Provide a clear, actionable lesson that builds on their current focus area
 
 RESPONSE FORMAT (JSON only, no additional text):
 {

@@ -6,6 +6,7 @@ import { ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { hasCompletedOnboarding } from "@/lib/profile-utils";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -18,7 +19,7 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
-    const { error } = isSignUp
+    const { error, data } = isSignUp
       ? await supabase.auth.signUp({ email, password })
       : await supabase.auth.signInWithPassword({ email, password });
 
@@ -26,7 +27,22 @@ export default function LoginPage() {
       setError(error.message);
       setLoading(false);
     } else {
-      window.location.href = "/";
+      // Get the current user
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (user) {
+        // Check if user has completed onboarding
+        const onboardingCompleted = await hasCompletedOnboarding(user.id);
+
+        // Redirect to onboarding if not completed, otherwise go to dashboard
+        if (!onboardingCompleted) {
+          window.location.href = "/onboarding";
+        } else {
+          window.location.href = "/dashboard";
+        }
+      } else {
+        window.location.href = "/";
+      }
     }
   }
 

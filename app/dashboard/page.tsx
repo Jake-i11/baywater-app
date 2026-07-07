@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { ShieldCheck, AlertTriangle, CheckCircle2, XCircle, TrendingUp, TrendingDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { User } from "@supabase/supabase-js";
+import Link from "next/link";
 import {
   getDisciplineStatistics,
   getViolationStatistics,
@@ -14,6 +15,173 @@ import {
   calculateDisciplineTrend,
   getCurrentProcessStatus
 } from "@/lib/market-enrichment";
+import { hasCompletedOnboarding } from "@/lib/profile-utils";
+import { getRecentPatternAnalysisSummary } from "@/lib/trade-pattern-utils";
+
+// Onboarding Banner Component
+function OnboardingBanner({ userId }: { userId: string }) {
+  const [showBanner, setShowBanner] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    async function checkOnboardingStatus() {
+      try {
+        const completed = await hasCompletedOnboarding(userId);
+        setShowBanner(!completed);
+      } catch (error) {
+        console.error("Error checking onboarding status:", error);
+        setShowBanner(false);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    if (userId) {
+      checkOnboardingStatus();
+    } else {
+      setLoading(false);
+    }
+  }, [userId]);
+
+  if (loading || !showBanner) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
+      <div className="flex items-center gap-3">
+        <ShieldCheck className="h-5 w-5 text-blue-400 flex-shrink-0" />
+        <div className="flex-1">
+          <p className="font-medium text-blue-300">Complete your Baywater setup</p>
+          <p className="text-sm text-blue-200 mt-1">
+            Unlock your discipline insights and get the full Baywater experience.
+          </p>
+        </div>
+        <a
+          href="/onboarding"
+          className="rounded-full border border-blue-500/30 bg-blue-500/20 px-4 py-2 text-sm font-semibold text-blue-300 hover:bg-blue-500/30 flex-shrink-0"
+        >
+          Complete Setup
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// Upcoming Commitments Card Component
+function UpcomingCommitmentsCard({ userId }: { userId: string }) {
+  const [commitments, setCommitments] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    async function fetchCommitments() {
+      try {
+        if (!userId) {
+          setLoading(false);
+          return;
+        }
+
+        // Import dynamically to avoid circular dependency
+        const { getUnlockedCommitments } = await import('@/lib/commitment-utils');
+        const unlockedCommitments = await getUnlockedCommitments(userId);
+        setCommitments(unlockedCommitments);
+      } catch (error) {
+        console.error("Error fetching commitments:", error);
+        setCommitments([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchCommitments();
+  }, [userId]);
+
+  if (loading) {
+    return (
+      <div className="rounded-lg border border-white/10 bg-white/5 p-4 animate-pulse">
+        <div className="h-4 bg-white/10 rounded w-1/4 mb-2"></div>
+        <div className="h-3 bg-white/10 rounded w-1/2"></div>
+      </div>
+    );
+  }
+
+  if (commitments.length === 0) {
+    return (
+      <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">No active commitments</p>
+              <p className="text-sm text-white/60 mt-1">
+                Create a pre-trade commitment before your next trade
+              </p>
+            </div>
+            <Link
+              href="/commitments/new"
+              className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10 flex-shrink-0"
+            >
+              Create Commitment
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <span className="h-5 w-5 text-blue-400">🎯</span>
+          Upcoming Commitment
+        </CardTitle>
+        <p className="text-xs text-white/50 mt-1">
+          Your locked trading plan awaiting execution
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {commitments.map((commitment) => (
+          <div key={commitment.id} className="p-3 rounded-lg bg-white/5 border border-white/10">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">{commitment.ticker || '—'}</p>
+                <p className="text-sm text-white/60 mt-1">
+                  {commitment.setup_type} • Confidence: {commitment.confidence_score}/10
+                </p>
+                <p className="text-xs text-white/50 mt-1">
+                  Created: {new Date(commitment.created_at).toLocaleString()}
+                </p>
+              </div>
+              <div className="text-right">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-1 text-xs text-emerald-400">
+                  <span className="h-3 w-3 rounded-full bg-emerald-400"></span>
+                  Locked
+                </span>
+                <Link
+                  href={`/commitments/new?edit=${commitment.id}`}
+                  className="ml-2 text-xs text-white/60 hover:text-white/80"
+                >
+                  View →
+                </Link>
+              </div>
+            </div>
+            <p className="text-sm text-white/80 mt-2 italic">
+              "{commitment.thesis}"
+            </p>
+          </div>
+        ))}
+        <div className="pt-3 border-t border-white/10">
+          <Link
+            href="/commitments/new"
+            className="w-full block text-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
+          >
+            + Create New Commitment
+          </Link>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
   type Trade = {
     id: string;
@@ -32,8 +200,9 @@ import {
 
 export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null);
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const [loading, setLoading] = useState(true);
+const [trades, setTrades] = useState<Trade[]>([]);
+const [loading, setLoading] = useState(true);
+const [patternSummary, setPatternSummary] = useState<any>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
@@ -47,7 +216,13 @@ export default function Dashboard() {
           .eq("user_id", sessionUser.id)
           .order("created_at", { ascending: false });
 
-        setTrades(tradeData ?? []);
+setTrades(tradeData ?? []);
+
+// Fetch pattern analysis summary
+if (sessionUser) {
+  const summary = await getRecentPatternAnalysisSummary(sessionUser.id);
+  setPatternSummary(summary);
+}
       }
       setLoading(false);
     });
@@ -169,6 +344,11 @@ export default function Dashboard() {
       </nav>
 
       <div className="mx-auto max-w-4xl space-y-6 px-6 pb-20 pt-6">
+        {/* ONBOARDING BANNER - only show if onboarding not completed */}
+        <OnboardingBanner userId={user?.id || ''} />
+        {/* UPCOMING COMMITMENTS CARD */}
+        <UpcomingCommitmentsCard userId={user?.id || ''} />
+
         {/* STATS ROW */}
         <div className="grid grid-cols-3 gap-4">
           <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
@@ -230,6 +410,92 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/* PATTERN INTELLIGENCE CARD */}
+        {patternSummary && patternSummary.totalAnalyzed > 0 && (
+          <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <span className="h-5 w-5 text-blue-400">🔍</span>
+                Today's Pattern Intelligence
+              </CardTitle>
+              <p className="text-xs text-white/50 mt-1">
+                How your recent trades compare to your historical patterns
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Recent Pattern Score */}
+              <div>
+                <p className="text-xs text-white/50">Recent Pattern Score</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-2xl font-bold text-emerald-400">
+                    {patternSummary.patternScore}%
+                  </span>
+                  <span className="text-sm text-white/60">
+                    match with historical winners
+                  </span>
+                </div>
+                <p className="text-xs text-white/60 mt-1">
+                  Based on your last {patternSummary.totalAnalyzed} analyzed trades
+                </p>
+              </div>
+
+              {/* Recent Strengths */}
+              {patternSummary.recentStrengths && patternSummary.recentStrengths.length > 0 && (
+                <div>
+                  <p className="text-xs text-white/50">Your recent edge</p>
+                  <div className="mt-2 space-y-2">
+                    {patternSummary.recentStrengths.map((strength: string, i: number) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <span className="mt-0.5 h-2 w-2 flex-shrink-0 rounded-full bg-emerald-500" />
+                        <p className="text-sm text-white/90">{strength}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Recent Warnings */}
+              {patternSummary.recentWarnings && patternSummary.recentWarnings.length > 0 && (
+                <div>
+                  <p className="text-xs text-white/50">Watch out</p>
+                  <div className="mt-2 space-y-2">
+                    {patternSummary.recentWarnings.map((warning: string, i: number) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <span className="mt-0.5 h-2 w-2 flex-shrink-0 rounded-full bg-red-500" />
+                        <p className="text-sm text-white/90">{warning}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Recent Trade Summary */}
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-white/5 border border-white/10">
+                <span className="h-5 w-5 text-blue-400 mt-0.5">💡</span>
+                <p className="text-sm text-white/80">
+                  {patternSummary.recentTradeSummary}
+                </p>
+              </div>
+
+              {/* Pattern Statistics */}
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/10">
+                <div>
+                  <p className="text-xs text-white/50">Winner Matches</p>
+                  <p className="mt-1 text-lg font-bold text-emerald-400">
+                    {patternSummary.winnerMatches}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-white/50">Loser Matches</p>
+                  <p className="mt-1 text-lg font-bold text-red-400">
+                    {patternSummary.loserMatches}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* DISCIPLINE & PROCESS INTELLIGENCE */}
         <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
