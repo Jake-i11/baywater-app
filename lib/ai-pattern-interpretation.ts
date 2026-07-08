@@ -4,7 +4,8 @@
  * Transforms raw statistical behavioral patterns into coaching insights.
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getOpenRouterClient } from "@/lib/ai/client";
+import { AI_MODELS } from "@/lib/ai/models";
 import { BehavioralPattern } from "./discipline-engine";
 
 export interface PatternInterpretation {
@@ -21,11 +22,6 @@ export async function interpretPattern(
   userId: string
 ): Promise<PatternInterpretation> {
   try {
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_API_KEY) {
-      return fallbackInterpretation(pattern);
-    }
-
     const prompt = `You are an elite trading psychology coach. Turn the following raw statistical pattern into a concise coaching insight.
 
 PATTERN: ${pattern.title}
@@ -41,18 +37,34 @@ Respond ONLY with JSON:
   "actionableImprovement": "One specific, concrete action to fix it"
 }`;
 
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      generationConfig: { responseMimeType: "application/json", temperature: 0.3 },
+    // Use OpenRouter client
+    const client = getOpenRouterClient();
+
+    // Generate the interpretation using OpenRouter
+    const response = await client.chat.completions.create({
+      model: AI_MODELS.default,
+      messages: [
+        {
+          role: "system",
+          content: "You are an elite trading psychology coach. Respond only with valid JSON in the specified format."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3,
+      max_tokens: 1000
     });
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
-    const parsed = JSON.parse(text);
+    const responseText = response.choices[0].message.content || '{}';
+    const parsed = JSON.parse(responseText);
+
     if (!parsed.what || !parsed.whyItMatters || !parsed.actionableImprovement) {
       return fallbackInterpretation(pattern);
     }
+
     return parsed as PatternInterpretation;
   } catch (error) {
     console.error("Pattern interpretation failed:", error);

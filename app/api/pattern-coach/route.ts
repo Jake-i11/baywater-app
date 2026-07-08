@@ -7,7 +7,8 @@
 
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getOpenRouterClient } from "@/lib/ai/client";
+import { AI_MODELS } from "@/lib/ai/models";
 import { generatePatternSummaryData } from '@/lib/pattern-analysis';
 import { getOrCreateTraderProfile, updateTraderProfile, generateTraderProfileUpdate } from '@/lib/profile-utils';
 
@@ -265,41 +266,33 @@ export async function POST(request: Request) {
     // Build the coaching prompt with trader profile context
     const prompt = buildCoachingPrompt(patternData, user_id, traderProfile);
 
-    // Generate AI coaching using Gemini
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_API_KEY) {
-      console.error('Gemini API key not configured');
-      return NextResponse.json(
-        { error: 'AI coaching service unavailable' },
-        { status: 503 }
-      );
-    }
+    // Generate AI coaching using OpenRouter
+    // Use OpenRouter client
+    const client = getOpenRouterClient();
 
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0.3,
-        maxOutputTokens: 2000
-      }
+    // Generate the coaching insights using OpenRouter
+    const response = await client.chat.completions.create({
+      model: AI_MODELS.default,
+      messages: [
+        {
+          role: "system",
+          content: "You are an elite trading performance coach. Respond only with valid JSON in the specified format."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3,
+      max_tokens: 2000
     });
-
-    // Generate the coaching insights
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const responseText = response.text();
 
     // Parse the AI response
     let coachingInsights;
     try {
-      const cleanedText = responseText.trim();
-      const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        coachingInsights = JSON.parse(jsonMatch[0]);
-      } else {
-        coachingInsights = JSON.parse(cleanedText);
-      }
+      const responseText = response.choices[0].message.content || '{}';
+      coachingInsights = JSON.parse(responseText);
     } catch (parseError) {
       console.error('Failed to parse AI coaching response:', parseError);
       return NextResponse.json(

@@ -4,7 +4,8 @@
  * Helper functions for managing user profiles, onboarding status, and trader profiles
  */
 import { supabase } from "@/lib/supabase";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getOpenRouterClient } from "@/lib/ai/client";
+import { AI_MODELS } from "@/lib/ai/models";
 
 /**
  * Get or create a user profile
@@ -216,10 +217,7 @@ export async function updateTraderProfile(userId: string, updates: {
  */
 export async function generateTraderProfileUpdate(userId: string, recentTrades: any[], previousProfile: any = null) {
   try {
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_API_KEY) {
-      throw new Error('Gemini API key not configured');
-    }
+    // No need to check GEMINI_API_KEY anymore
 
     // Build context for AI analysis
     const context = {
@@ -310,21 +308,29 @@ IMPORTANT RULES:
 - If no meaningful changes are needed, return empty changesMade array
 `;
 
-    // Initialize Gemini client
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0.3,
-        maxOutputTokens: 2000
-      }
+    // Use OpenRouter client
+    const client = getOpenRouterClient();
+
+    // Generate the profile update using OpenRouter
+    const response = await client.chat.completions.create({
+      model: AI_MODELS.default,
+      messages: [
+        {
+          role: "system",
+          content: "You are an elite trading performance coach. Respond only with valid JSON in the specified format."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3,
+      max_tokens: 2000
     });
 
-    // Generate the profile update
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const responseText = response.text();
+    // Get the response text
+    const responseText = response.choices[0].message.content || '{}';
 
     // Parse and validate the response
     try {

@@ -6,7 +6,8 @@
  */
 
 import { supabase } from "@/lib/supabase";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getOpenRouterClient } from "@/lib/ai/client";
+import { AI_MODELS } from "@/lib/ai/models";
 
 /**
  * Main pattern matching function
@@ -453,7 +454,7 @@ function generateTradeConditions(trade: any, winnerMatches: any[], loserMatches:
 }
 
 /**
- * Generate AI explanation using Gemini
+ * Generate AI explanation using OpenRouter
  * @param trade Current trade
  * @param winnerMatches Similar winning trades
  * @param loserMatches Similar losing trades
@@ -463,17 +464,6 @@ function generateTradeConditions(trade: any, winnerMatches: any[], loserMatches:
  */
 async function generatePatternExplanation(trade: any, winnerMatches: any[], loserMatches: any[], winnerSimilarity: number, loserSimilarity: number) {
   try {
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_API_KEY) {
-      return {
-        summary: "AI explanation unavailable",
-        looks_like_winners_because: [],
-        looks_like_losers_because: [],
-        historical_edge: "",
-        risk_flags: []
-      };
-    }
-
     // Prepare trade statistics
     const winnerStats = calculateTradeStatistics(winnerMatches);
     const loserStats = calculateTradeStatistics(loserMatches);
@@ -535,29 +525,49 @@ RESPONSE FORMAT (JSON only):
   ]
 }`;
 
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0.3,
-        maxOutputTokens: 2000
-      }
-    });
+    // Use OpenRouter client
+    const client = getOpenRouterClient();
 
-    // Generate the explanation
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const responseText = response.text();
+    // Generate the explanation using OpenRouter
+    const response = await client.chat.completions.create({
+      model: AI_MODELS.default,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a trading performance analyst. Respond only with valid JSON in the specified format.'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.3,
+      max_tokens: 2000
+    });
 
     // Parse the response
     try {
-      const cleanedText = responseText.trim();
-      const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+      const responseText = response.choices[0].message.content;
+      if (responseText) {
+        return JSON.parse(responseText);
       } else {
-        return JSON.parse(cleanedText);
+        // Fallback if parsing fails
+        return {
+          summary: "Pattern analysis completed",
+          looks_like_winners_because: winnerMatches.length > 0
+            ? [`Matches ${winnerMatches.length} previous winning trades with similar characteristics`]
+            : [],
+          looks_like_losers_because: loserMatches.length > 0
+            ? [`Resembles ${loserMatches.length} previous losing trades in some aspects`]
+            : [],
+          historical_edge: winnerMatches.length > 0
+            ? `Your similar trades have produced +$${winnerStats.totalPL.toFixed(2)} across ${winnerMatches.length} trades`
+            : "No historical edge detected",
+          risk_flags: loserMatches.length > 0
+            ? [`Similar losing trades resulted in -$${Math.abs(loserStats.totalPL).toFixed(2)} across ${loserMatches.length} trades`]
+            : []
+        };
       }
     } catch (parseError) {
       console.error('Failed to parse AI response:', parseError);

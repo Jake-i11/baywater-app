@@ -5,7 +5,8 @@
  */
 
 import { supabase } from "@/lib/supabase";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getOpenRouterClient } from "@/lib/ai/client";
+import { AI_MODELS } from "@/lib/ai/models";
 
 /**
  * Create a new pre-trade commitment
@@ -476,38 +477,34 @@ function countLosingPatternMatches(similarTrades: any[], currentTrade: any): num
  */
 async function generateAIInsights(analysisData: any) {
   try {
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_API_KEY) {
-      throw new Error('Gemini API key not configured');
-    }
-
     // Prepare the prompt
     const prompt = buildPatternAnalysisPrompt(analysisData);
 
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0.3,
-        maxOutputTokens: 2000
-      }
-    });
+    // Use OpenRouter client
+    const client = getOpenRouterClient();
 
-    // Generate the insights
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const responseText = response.text();
+    // Generate the insights using OpenRouter
+    const response = await client.chat.completions.create({
+      model: AI_MODELS.default,
+      messages: [
+        {
+          role: "system",
+          content: "You are a trading performance analyst. Respond only with valid JSON in the specified format."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3,
+      max_tokens: 2000
+    });
 
     // Parse the response
     try {
-      const cleanedText = responseText.trim();
-      const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
-      } else {
-        return JSON.parse(cleanedText);
-      }
+      const responseText = response.choices[0].message.content || '{}';
+      return JSON.parse(responseText);
     } catch (parseError) {
       console.error('Failed to parse AI response:', parseError);
       return {

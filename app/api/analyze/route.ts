@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getOpenRouterClient } from "@/lib/ai/client";
+import { AI_MODELS } from "@/lib/ai/models";
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,33 +11,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_API_KEY) {
-      return NextResponse.json({ error: "Gemini API key not configured" }, { status: 500 });
-    }
-
-    // Convert file to base64 for Gemini
+    // Convert file to base64 for OpenRouter
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     const base64Image = buffer.toString("base64");
     const mimeType = file.type || "image/png";
 
-    // Initialize Gemini client
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-    });
+    // Use OpenRouter client
+    const client = getOpenRouterClient();
 
-    // Generate content with image and text prompt
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          data: base64Image,
-          mimeType: mimeType
-        }
-      },
-      {
-        text: `Analyze this trading screenshot and extract the following information:
+    // Generate content with image and text prompt using OpenRouter
+    const response = await client.chat.completions.create({
+      model: AI_MODELS.vision,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `Analyze this trading screenshot and extract the following information:
 
 - ticker: The stock symbol (e.g., "AAPL", "TSLA")
 - entry: The entry price as a string
@@ -47,24 +40,40 @@ export async function POST(request: NextRequest) {
 - timezone: The timezone if visible, otherwise use "UTC"
 
 Return ONLY valid JSON. If any value is not visible in the screenshot, return null for that field.`
-      }
-    ]);
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${mimeType};base64,${base64Image}`
+              }
+            }
+          ]
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.0,
+      max_tokens: 1000
+    });
 
     // Get the JSON response
-    const response = await result.response;
-    const tradeData = response.text();
+    const tradeData = response.choices[0].message.content;
 
     // Parse and validate the JSON
     let trade;
     try {
-      trade = JSON.parse(tradeData);
+      const cleaned = tradeData?.trim().replace(/^```json\s*|\s*```$/g, "");
+      if (cleaned) {
+        trade = JSON.parse(cleaned);
+      } else {
+        throw new Error("Empty response");
+      }
     } catch (parseError) {
-      console.error("Failed to parse Gemini response:", parseError);
+      console.error("Failed to parse OpenRouter response:", tradeData);
       return NextResponse.json({ error: "Could not parse trade data" }, { status: 422 });
     }
 
     // Validate required fields
-    if (!trade.ticker || !trade.entry || !trade.exit || !trade.size || !trade.timezone) {
+    if (!trade?.ticker || !trade?.entry || !trade?.exit || !trade?.size || !trade?.timezone) {
       return NextResponse.json({ error: "Missing required trade data" }, { status: 422 });
     }
 

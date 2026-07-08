@@ -1,11 +1,12 @@
 /**
  * AI Trade Review System
  *
- * Server-side helper for generating AI-powered trade reviews using Gemini API
+ * Server-side helper for generating AI-powered trade reviews using OpenRouter API
  * This system provides automated trading coaching and performance analysis
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getOpenRouterClient } from "@/lib/ai/client";
+import { AI_MODELS } from "@/lib/ai/models";
 
 interface TradeData {
   ticker: string;
@@ -41,7 +42,7 @@ interface AIReview {
 /**
  * Build a comprehensive prompt for the AI trade review
  * @param trade Complete trade data with market context
- * @returns Formatted prompt string for Gemini API
+ * @returns Formatted prompt string for OpenRouter API
  */
 export function buildTradePrompt(trade: TradeData): string {
   // Format violations for the prompt
@@ -118,7 +119,7 @@ IMPORTANT: The replay should read like you're watching the trade happen live. De
 
 /**
  * Parse AI response and validate structure
- * @param responseText Raw response from Gemini API
+ * @param responseText Raw response from OpenRouter API
  * @returns Parsed AIReview object or null if parsing fails
  */
 export function parseAIResponse(responseText: string): AIReview | null {
@@ -126,7 +127,7 @@ export function parseAIResponse(responseText: string): AIReview | null {
     // Clean up the response text
     const cleanedText = responseText.trim();
 
-    // Try to extract JSON (Gemini sometimes adds markdown)
+    // Try to extract JSON (OpenRouter sometimes adds markdown)
     const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       console.warn('No JSON found in AI response');
@@ -179,32 +180,32 @@ export function parseAIResponse(responseText: string): AIReview | null {
  */
 export async function generateTradeReview(trade: TradeData): Promise<AIReview | null> {
   try {
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_API_KEY) {
-      console.warn('Gemini API key not configured');
-      return null;
-    }
-
     // Build the prompt
     const prompt = buildTradePrompt(trade);
 
-    // Initialize Gemini client
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0.3, // More deterministic responses
-        maxOutputTokens: 1000
-      }
+    // Use OpenRouter client
+    const client = getOpenRouterClient();
+
+    // Generate the review using OpenRouter
+    const response = await client.chat.completions.create({
+      model: AI_MODELS.default,
+      messages: [
+        {
+          role: "system",
+          content: "You are an elite trading performance coach. Respond only with valid JSON in the specified format."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3, // More deterministic responses
+      max_tokens: 1000
     });
 
-    // Generate the review
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const responseText = response.text();
-
     // Parse the response
+    const responseText = response.choices[0].message.content || '{}';
     const review = parseAIResponse(responseText);
 
     if (!review) {

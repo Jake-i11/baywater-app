@@ -893,7 +893,7 @@ if (sessionUser) {
               <div className="py-12 text-center">
                 <p className="text-white/40">No trades logged yet.</p>
                 <a
-                  href="/"
+                  href="/analyze"
                   className="mt-3 inline-block text-sm text-emerald-400 hover:text-emerald-300"
                 >
                   Analyze your first trade →

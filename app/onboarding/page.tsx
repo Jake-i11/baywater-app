@@ -28,7 +28,7 @@ export default function OnboardingPage() {
     try {
       if (user) {
         await completeOnboarding(user.id);
-        router.push("/dashboard");
+        router.push("/analyze");
       }
     } catch (error) {
       console.error("Failed to complete onboarding:", error);

@@ -130,6 +130,13 @@ export default function Home() {
           Analyze My Trade
         </Link>
 
+        <Link
+          href="/dashboard"
+          className="mt-4 ml-4 inline-block rounded-full border border-emerald-500/50 px-8 py-3 font-semibold text-emerald-300 shadow-xl shadow-emerald-500/10 transition hover:bg-emerald-500/10"
+        >
+          Go to Dashboard
+        </Link>
+
         <div className="absolute -left-10 bottom-0 hidden w-52 rounded-2xl border border-white/10 bg-[#0d2415]/80 p-4 backdrop-blur-xl md:block">
           <p className="text-xs text-white/50">Trades analyzed</p>
           <p className="mt-1 text-2xl font-bold">128</p>

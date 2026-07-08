@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getOpenRouterClient } from "@/lib/ai/client";
+import { AI_MODELS } from "@/lib/ai/models";
 import { getOrCreateTraderProfile, updateTraderProfile, generateTraderProfileUpdate } from '@/lib/profile-utils';
 
 interface TradeData {
@@ -131,10 +132,7 @@ export async function GET(request: Request) {
 
 async function generateReplayAnalysis(trade: TradeData, candles: CandleData[], traderProfile: any = null): Promise<ReplayAnalysis> {
   try {
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_API_KEY) {
-      throw new Error('Gemini API key not configured');
-    }
+    // No need to check GEMINI_API_KEY anymore
 
     // Parse trade data
     const entryPrice = parseFloat(trade.entry);
@@ -232,21 +230,29 @@ RESPONSE FORMAT (JSON only, no additional text):
 IMPORTANT: Each replay event must have a timestamp matching the candle times. Analyze only information available at each specific moment. Be precise about market structure and price action.
 `;
 
-    // Initialize Gemini client
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0.3,
-        maxOutputTokens: 2000
-      }
+    // Use OpenRouter client
+    const client = getOpenRouterClient();
+
+    // Generate the analysis using OpenRouter
+    const response = await client.chat.completions.create({
+      model: AI_MODELS.default,
+      messages: [
+        {
+          role: "system",
+          content: "You are an elite trading performance coach. Respond only with valid JSON in the specified format."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3,
+      max_tokens: 2000
     });
 
-    // Generate the analysis
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const responseText = response.text();
+    // Get the response text
+    const responseText = response.choices[0].message.content || '{}';
 
     // Parse and validate the response
     try {
