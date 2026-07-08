@@ -44,6 +44,17 @@ function buildCoachingPrompt(patternData: any, userId: string, traderProfile: an
   return `
 You are an elite trading performance coach analyzing a trader's personal historical data with long-term memory.
 
+DISCIPLINE CONFLUENCE CONTEXT (highest priority - behavioral leaks):
+${patternData.biggestBehavioralLeaks?.length > 0 ? patternData.biggestBehavioralLeaks.map((l: any) => `- ${l.title}: ${l.description} (confidence ${l.confidenceScore}%, ~$${Math.abs(l.estimatedFinancialImpact)} cost, ${l.sampleSize} trades)`).join('\n') : 'No discipline patterns detected yet'}
+
+FINANCIAL COST OF MISTAKES: ${patternData.financialCostOfMistakes != null ? '$' + patternData.financialCostOfMistakes : 'unknown'}
+>>>>>>> PRIORITIZE the discipline confluence leaks above in every coaching response. Reference specific percentages and dollar amounts.
+>>>>>>> Example good coaching: "You have lost $2,840 from overtrading after your first losing trade. This happened in 73% of your red days."
+>>>>>>> Example bad coaching: "You should avoid overtrading."
+>>>>>>> 
+>>>>>>> 
+You are an elite trading performance coach analyzing a trader's personal historical data with long-term memory.
+
 IMPORTANT RULES:
 1. Never make unsupported claims. Every insight must cite specific statistics.
 2. Separate true edge from random short-term results.
@@ -219,6 +230,34 @@ export async function POST(request: Request) {
 
     // Generate pattern statistics
     const patternData = await generatePatternSummaryData(user_id);
+
+    // Enrich pattern data with discipline confluence analytics.
+    try {
+      const { getDisciplineAnalytics, loadDisciplineEvents, detectAndStorePatterns } = await import("@/lib/discipline-utils");
+      const events = await loadDisciplineEvents(user_id);
+      await detectAndStorePatterns(user_id, events);
+      const discipline = await getDisciplineAnalytics(user_id);
+
+      const { data: disciplinePatterns } = await supabase
+        .from("behavior_patterns")
+        .select("title, description, confidence_score, estimated_financial_impact, frequency")
+        .eq("user_id", user_id)
+        .order("last_occurrence", { ascending: false })
+        .limit(10);
+
+      (patternData as any).biggestBehavioralLeaks = (disciplinePatterns || []).map((p: any) => ({
+        title: p.title ?? p.pattern_type,
+        description: p.description ?? p.ai_summary,
+        confidenceScore: p.confidence_score ?? 0,
+        estimatedFinancialImpact: Number(p.estimated_financial_impact ?? 0),
+        sampleSize: p.frequency ?? 0,
+      }));
+      (patternData as any).financialCostOfMistakes = discipline.financialCostOfMistakes;
+    } catch (disciplineError) {
+      console.error("Failed to enrich coach prompt with discipline data:", disciplineError);
+      (patternData as any).biggestBehavioralLeaks = [];
+      (patternData as any).financialCostOfMistakes = null;
+    }
 
     // Get or create trader profile
     const traderProfile = await getOrCreateTraderProfile(user_id);
