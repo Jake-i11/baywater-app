@@ -8,7 +8,7 @@ import { TradeChart } from "@/components/TradeChart";
 import { AIReplay } from "@/components/AIReplay";
 import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
-import { calculateTradeOutcomeCategory } from "@/lib/market-enrichment";
+import { calculateTradeOutcomeCategory } from "@/lib/trade-utils";
 import { getTradePatternAnalysis } from "@/lib/trade-pattern-utils";
 
 // Helper functions for process review display

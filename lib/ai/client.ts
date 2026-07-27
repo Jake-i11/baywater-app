@@ -5,6 +5,7 @@
  * All AI calls should use this client instead of direct Gemini/Google AI calls.
  */
 
+import "server-only";
 import OpenAI from 'openai';
 
 /**
@@ -12,6 +13,8 @@ import OpenAI from 'openai';
  */
 export function createOpenRouterClient() {
   const apiKey = process.env.OPENROUTER_API_KEY;
+
+console.log("OPENROUTER KEY EXISTS:", !!process.env.OPENROUTER_API_KEY);
 
   if (!apiKey) {
     throw new Error('OpenRouter API key not configured');

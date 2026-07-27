@@ -32,12 +32,17 @@ export async function POST(request: NextRequest) {
               text: `Analyze this trading screenshot and extract the following information:
 
 - ticker: The stock symbol (e.g., "AAPL", "TSLA")
-- entry: The entry price as a string
-- exit: The exit price as a string
-- size: The position size as a string
-- tradeDate: The date of the trade if visible (YYYY-MM-DD format), or null if not visible
-- tradeTime: The time of the trade if visible (e.g., "9:30 AM"), or null if not visible
-- timezone: The timezone if visible, otherwise use "UTC"
+- entry: The entry price as a string (e.g., "1.59")
+- exit: The exit price as a string (e.g., "1.46")
+- size: The position size as a string (e.g., "68")
+- time: The complete entry/opening trade timestamp as visible in the screenshot. Extract the FULL date, time, and timezone together.
+  Accepted formats: "7/01/26 13:42:47 EDT", "07/01/2026 13:42:47 EDT", "2026-07-01 13:42:47", "2026-07-01 01:42 PM", etc.
+  If only a date and time are visible without a timezone name, still return them as the time value.
+  If no timestamp is visible at all, return null.
+- exit_time: The complete exit/closing/cover trade timestamp as visible in the screenshot.
+  Look for column headers or labels such as: "Exit Time", "Close Time", "Filled Time", "Closing Time", "Cover Time", "Sell Time", "Order Filled Time".
+  Accepted formats: "7/01/26 14:18:32 EDT", "07/01/2026 14:18:32 EDT", "2026-07-01 14:18:32", "2026-07-01 02:18 PM", etc.
+  If no exit timestamp is visible, return null.
 
 Return ONLY valid JSON. If any value is not visible in the screenshot, return null for that field.`
             },
@@ -72,8 +77,8 @@ Return ONLY valid JSON. If any value is not visible in the screenshot, return nu
       return NextResponse.json({ error: "Could not parse trade data" }, { status: 422 });
     }
 
-    // Validate required fields
-    if (!trade?.ticker || !trade?.entry || !trade?.exit || !trade?.size || !trade?.timezone) {
+    // Validate required fields (timezone is no longer required — it's inferred as America/New_York)
+    if (!trade?.ticker || !trade?.entry || !trade?.exit || !trade?.size) {
       return NextResponse.json({ error: "Missing required trade data" }, { status: 422 });
     }
 

@@ -14,8 +14,7 @@ import {
   calculateDisciplineStreaks,
   calculateDisciplineTrend,
   getCurrentProcessStatus
-} from "@/lib/market-enrichment";
-import { hasCompletedOnboarding } from "@/lib/profile-utils";
+} from "@/lib/trade-utils";
 import { getRecentPatternAnalysisSummary } from "@/lib/trade-pattern-utils";
 
 // Onboarding Banner Component
@@ -26,8 +25,21 @@ function OnboardingBanner({ userId }: { userId: string }) {
   useEffect(() => {
     async function checkOnboardingStatus() {
       try {
-        const completed = await hasCompletedOnboarding(userId);
-        setShowBanner(!completed);
+        if (!userId) {
+          setShowBanner(false);
+          setLoading(false);
+          return;
+        }
+
+        // Call API to check onboarding status
+        const response = await fetch(`/api/profile?userId=${userId}`);
+        if (response.ok) {
+          const data = await response.json();
+          setShowBanner(!data.hasCompletedOnboarding);
+        } else {
+          console.error("Error checking onboarding status:", await response.json());
+          setShowBanner(false);
+        }
       } catch (error) {
         console.error("Error checking onboarding status:", error);
         setShowBanner(false);
@@ -36,11 +48,7 @@ function OnboardingBanner({ userId }: { userId: string }) {
       }
     }
 
-    if (userId) {
-      checkOnboardingStatus();
-    } else {
-      setLoading(false);
-    }
+    checkOnboardingStatus();
   }, [userId]);
 
   if (loading || !showBanner) {
@@ -81,10 +89,25 @@ function UpcomingCommitmentsCard({ userId }: { userId: string }) {
           return;
         }
 
-        // Import dynamically to avoid circular dependency
-        const { getUnlockedCommitments } = await import('@/lib/commitment-utils');
-        const unlockedCommitments = await getUnlockedCommitments(userId);
-        setCommitments(unlockedCommitments);
+        // Call API to get unlocked commitments
+        const response = await fetch("/api/commitments", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "getUnlocked",
+            userId
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          setCommitments(result.commitments);
+        } else {
+          console.error("Error fetching commitments:", await response.json());
+          setCommitments([]);
+        }
       } catch (error) {
         console.error("Error fetching commitments:", error);
         setCommitments([]);

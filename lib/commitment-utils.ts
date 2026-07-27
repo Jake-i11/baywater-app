@@ -3,7 +3,7 @@
  *
  * Helper functions for managing pre-trade commitments and pattern analysis
  */
-
+import "server-only";
 import { supabase } from "@/lib/supabase";
 import { getOpenRouterClient } from "@/lib/ai/client";
 import { AI_MODELS } from "@/lib/ai/models";
@@ -575,7 +575,7 @@ Actual Execution:
 - Violations: ${JSON.parse(trade.violations || '[]').join(', ') || 'None'}
 
 SIMILAR HISTORICAL TRADES:
-${similarTrades.length > 0 ? similarTrades.map(formatTrade).join('\\n\\n') : 'No similar trades found'}
+${similarTrades.length > 0 ? similarTrades.map(formatTrade).join('\n\n') : 'No similar trades found'}
 
 RESPONSE FORMAT (JSON only):
 {

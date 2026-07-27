@@ -6,7 +6,6 @@ import { ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { hasCompletedOnboarding } from "@/lib/profile-utils";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -31,13 +30,26 @@ export default function LoginPage() {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
-        // Check if user has completed onboarding
-        const onboardingCompleted = await hasCompletedOnboarding(user.id);
+        // Check if user has completed onboarding via API
+        try {
+          const response = await fetch(`/api/profile?userId=${user.id}`);
+          if (response.ok) {
+            const data = await response.json();
+            const onboardingCompleted = data.hasCompletedOnboarding;
 
-        // Redirect to onboarding if not completed, otherwise go to dashboard
-        if (!onboardingCompleted) {
-          window.location.href = "/onboarding";
-        } else {
+            // Redirect to onboarding if not completed, otherwise go to dashboard
+            if (!onboardingCompleted) {
+              window.location.href = "/onboarding";
+            } else {
+              window.location.href = "/dashboard";
+            }
+          } else {
+            // If API call fails, default to onboarding
+            window.location.href = "/onboarding";
+          }
+        } catch (error) {
+          console.error("Error checking onboarding status:", error);
+          // If error occurs, default to dashboard
           window.location.href = "/dashboard";
         }
       } else {

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { ShieldCheck, CheckCircle2, AlertTriangle, XCircle, TrendingUp, TrendingDown, Upload, ArrowRight } from "lucide-react";
-import { completeOnboarding } from "@/lib/profile-utils";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -27,8 +26,24 @@ export default function OnboardingPage() {
   async function handleCompleteOnboarding() {
     try {
       if (user) {
-        await completeOnboarding(user.id);
-        router.push("/analyze");
+        // Call API to complete onboarding
+        const response = await fetch("/api/profile", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: user.id,
+            action: "completeOnboarding"
+          }),
+        });
+
+        if (response.ok) {
+          router.push("/analyze");
+        } else {
+          console.error("Failed to complete onboarding:", await response.json());
+          router.push("/dashboard");
+        }
       }
     } catch (error) {
       console.error("Failed to complete onboarding:", error);

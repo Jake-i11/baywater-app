@@ -26,17 +26,20 @@ export async function POST(request: NextRequest) {
     const startISO = new Date(startTime).toISOString();
     const endISO = new Date(endTime).toISOString();
 
+    // Build Alpaca bars URL with IEX feed (SIP feed requires higher-tier subscription)
+    const alpacaUrl = `https://data.alpaca.markets/v2/stocks/${ticker}/bars?timeframe=5Min&start=${startISO}&end=${endISO}&limit=1000&feed=iex`;
+
+    // Log URL without sensitive query params (keys are in headers, not URL)
+    console.log("[Chart API] Alpaca request URL:", alpacaUrl);
+
     // Fetch 5-minute bars from Alpaca
-    const response = await fetch(
-      `https://data.alpaca.markets/v2/stocks/${ticker}/bars?timeframe=5Min&start=${startISO}&end=${endISO}&limit=1000`,
-      {
-        method: "GET",
-        headers: {
-          "APCA-API-KEY-ID": ALPACA_API_KEY,
-          "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY,
-        },
-      }
-    );
+    const response = await fetch(alpacaUrl, {
+      method: "GET",
+      headers: {
+        "APCA-API-KEY-ID": ALPACA_API_KEY,
+        "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY,
+      },
+    });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));

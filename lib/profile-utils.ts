@@ -3,6 +3,7 @@
  *
  * Helper functions for managing user profiles, onboarding status, and trader profiles
  */
+import "server-only";
 import { supabase } from "@/lib/supabase";
 import { getOpenRouterClient } from "@/lib/ai/client";
 import { AI_MODELS } from "@/lib/ai/models";

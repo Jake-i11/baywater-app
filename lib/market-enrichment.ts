@@ -5,8 +5,10 @@
  * and enriching trade data with additional market context
  */
 
+import "server-only";
 import { supabase } from "@/lib/supabase";
 import { generateTradeReview } from "@/lib/ai-review";
+import { generateCoachReview, buildCoachContext, type CoachCurrentTrade } from "@/lib/ai/coach";
 
 interface CompanyProfile {
   floatShares?: number;
@@ -665,6 +667,106 @@ export function getCurrentProcessStatus(trades: any[]): {
  * @param tradeId ID of the trade to analyze
  * @returns Promise that resolves when AI processing is complete
  */
+/**
+ * Generate AI coaching review and store the structured response
+ * @param tradeId ID of the trade to analyze
+ * @param traderContext Optional trader context with profile + behavior data
+ */
+export async function generateAndStoreCoachingReview(
+  tradeId: string,
+  traderContext?: any
+): Promise<void> {
+  try {
+    // Fetch the complete trade data from Supabase
+    const { data: trade, error: fetchError } = await supabase
+      .from('trades')
+      .select('*')
+      .eq('id', tradeId)
+      .single();
+
+    if (fetchError || !trade) {
+      console.error(`Failed to fetch trade ${tradeId} for coaching review:`, fetchError);
+      return;
+    }
+
+    // Build the current trade object for coaching
+    const currentTrade: CoachCurrentTrade = {
+      ticker: trade.ticker,
+      side: (trade.direction || '').toUpperCase() === 'SHORT' ? 'SHORT' : 'LONG',
+      direction: trade.direction || 'long',
+      entry_price: trade.entry || trade.entry_price || null,
+      exit_price: trade.exit || trade.exit_price || null,
+      size: trade.size || '0',
+      entry_time: trade.entry_time || trade.time || null,
+      exit_time: trade.exit_time || null,
+      realized_pl: trade.realized_pl ? trade.realized_pl.toString() : null,
+      holdTime: trade.hold_time || 'N/A',
+      violations: trade.violations ? JSON.parse(trade.violations) : [],
+      discipline_score: trade.discipline_score ?? null,
+      violation_cost: trade.violation_cost ?? null,
+      tradeMetrics: null, // Chart metrics not available server-side
+    };
+
+    // Build context from trader context if provided
+    let ctx;
+    if (traderContext) {
+      ctx = buildCoachContext(
+        currentTrade,
+        traderContext.traderProfile || null,
+        traderContext.behaviorReport || null,
+        traderContext.traderRules,
+        traderContext.behaviorTags,
+        traderContext.recentTradeSummary,
+        traderContext.traderProfileState
+      );
+    } else {
+      // Minimal context with just the trade
+      ctx = buildCoachContext(currentTrade, null, null);
+    }
+
+    // Generate coaching review
+    const coachingResponse = await generateCoachReview(ctx);
+
+    // Store the structured coaching response
+    const { error: updateError } = await supabase
+      .from('trades')
+      .update({
+        ai_review: JSON.stringify(coachingResponse),
+        ai_replay: coachingResponse.summary,
+        setup_quality: coachingResponse.grade?.score ?? 0,
+        trade_grade: getGradeLetter(coachingResponse.grade?.score ?? 0),
+      })
+      .eq('id', tradeId);
+
+    if (updateError) {
+      console.error(`Failed to update trade ${tradeId} with coaching review:`, updateError);
+    } else {
+      console.log(`Successfully generated coaching review for trade ${tradeId}`);
+    }
+
+  } catch (error) {
+    console.error(`Coaching review processing error for trade ${tradeId}:`, error);
+  }
+}
+
+/**
+ * Convert a numerical score to a letter grade
+ */
+function getGradeLetter(score: number): string {
+  if (score >= 92) return 'A';
+  if (score >= 85) return 'A-';
+  if (score >= 78) return 'B+';
+  if (score >= 70) return 'B';
+  if (score >= 62) return 'B-';
+  if (score >= 55) return 'C+';
+  if (score >= 48) return 'C';
+  if (score >= 40) return 'C-';
+  if (score >= 30) return 'D+';
+  if (score >= 20) return 'D';
+  return 'F';
+}
+
+/** Keep the original function for backwards compatibility */
 export async function generateAndStoreAIReview(tradeId: string): Promise<void> {
   try {
     // Fetch the complete trade data from Supabase

@@ -7,7 +7,6 @@ import { ShieldCheck, Upload, CheckCircle2, AlertTriangle, Lock, Image as ImageI
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { createPreTradeCommitment, lockPreTradeCommitment } from "@/lib/commitment-utils";
 import Link from "next/link";
 
 export default function NewCommitmentPage() {
@@ -117,11 +116,30 @@ export default function NewCommitmentPage() {
         ticker: ticker.toUpperCase()
       };
 
-      const commitment = await createPreTradeCommitment(user.id, commitmentData);
-      setCommitmentId(commitment.id);
+      // Call API to create commitment
+      const response = await fetch("/api/commitments", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "create",
+          userId: user.id,
+          commitmentData
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Save commitment error:', errorData.error);
+        throw new Error(errorData.error || 'Failed to save commitment');
+      }
+
+      const result = await response.json();
+      setCommitmentId(result.commitment.id);
       setIsLocked(false);
 
-      return commitment;
+      return result.commitment;
     } catch (error) {
       console.error('Save commitment error:', error);
       throw error;
@@ -135,10 +153,29 @@ export default function NewCommitmentPage() {
 
     try {
       setLocking(true);
-      const commitment = await lockPreTradeCommitment(commitmentId);
+
+      // Call API to lock commitment
+      const response = await fetch("/api/commitments", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "lock",
+          commitmentId
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Lock commitment error:', errorData.error);
+        throw new Error(errorData.error || 'Failed to lock commitment');
+      }
+
+      const result = await response.json();
       setIsLocked(true);
       setLockedAt(new Date().toLocaleString());
-      return commitment;
+      return result.commitment;
     } catch (error) {
       console.error('Lock commitment error:', error);
       throw error;
