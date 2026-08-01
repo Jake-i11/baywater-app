@@ -195,6 +195,7 @@ export default function AnalyzePage() {
   const [aiReviewLoading, setAiReviewLoading] = useState(false);
   const [chartError, setChartError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<'trades' | 'profile' | 'coach' | 'analytics'>('trades');
+  const [analysisPhase, setAnalysisPhase] = useState<string | null>(null);
 
   // Refs to avoid race conditions when trades switch mid-fetch
   const pendingChartTrade = useRef<string | null>(null);
@@ -1226,6 +1227,9 @@ export default function AnalyzePage() {
     try {
       // ── CSV path ──
       if (file.name.endsWith('.csv')) {
+        setAnalysisPhase("Parsing trades...");
+        await new Promise(r => setTimeout(r, 50)); // let React paint
+
         const content = await file.text();
         const parsedTrades = parseCSVContent(content);
 
@@ -1393,8 +1397,15 @@ export default function AnalyzePage() {
           };
         });
 
+        setAnalysisPhase("Building trader profile...");
+        await new Promise(r => setTimeout(r, 50));
+
         // ── Compute behavior tags instantly ──
         const ctx = computeTaggingContext(parsedTrades);
+
+        setAnalysisPhase("Analyzing behavior patterns...");
+        await new Promise(r => setTimeout(r, 50));
+
         const taggedTrades: TradeData[] = tradeList.map((t: TradeData) => {
           const input: TradeBehaviorInput = {
             ticker: t.ticker,
@@ -1411,13 +1422,22 @@ export default function AnalyzePage() {
             tradeMetrics: t.tradeMetrics || undefined,
           };
           const behaviors = tagTrade(input, ctx, ctx.repeatedTickers);
-          return { ...t, ...behaviors };
+          return {
+            ...t,
+            behaviorTags: behaviors.tags,
+            behaviorSeverity: behaviors.severity,
+            behaviorSummary: behaviors.summary,
+          };
         });
+
+        setAnalysisPhase("Generating coaching insights...");
+        await new Promise(r => setTimeout(r, 50));
 
         setTrades(taggedTrades);
         if (taggedTrades.length > 0) {
           setSelectedTradeIndex(0);
         }
+        setAnalysisPhase(null);
 
       // ── Image path (screenshot) ──
       } else {
@@ -1579,6 +1599,7 @@ export default function AnalyzePage() {
       alert("Failed to process file: " + (error instanceof Error ? error.message : String(error)));
     } finally {
       setLoading(false);
+      setAnalysisPhase(null);
     }
   }
 
@@ -1589,8 +1610,8 @@ export default function AnalyzePage() {
 
   // ─── Memoized Trader Analytics ───
   const traderAnalytics = useMemo<TraderInsights | null>(() => {
-    // Only analyze when we have multiple trades
-    if (trades.length < 2) return null;
+    // Always compute analytics when trades are available
+    if (trades.length < 1) return null;
 
     const profile = buildTraderProfile(trades as AnalyticsTrade[]);
     const insights = generateInsights(profile);
@@ -1599,8 +1620,8 @@ export default function AnalyzePage() {
 
   // ─── Memoized Behavior Report ───
   const behaviorReport = useMemo<BehaviorReport | null>(() => {
-    // Only analyze when we have enough trades for meaningful patterns
-    if (trades.length < 3) return null;
+    // Analyze patterns starting from 2 trades
+    if (trades.length < 2) return null;
 
     const report = buildBehaviorReport(trades as BehaviorTrade[]);
     return report;
@@ -1614,13 +1635,13 @@ export default function AnalyzePage() {
 
   // ─── Memoized Trader Profile State (Part 1: Persistent Coach Profile) ───
   const traderProfileState = useMemo<TraderProfileState | null>(() => {
-    if (trades.length < 2) return null;
+    if (trades.length < 1) return null;
     return calculateTraderProfile(trades as ProfileTrade[]);
   }, [trades]);
 
   // ─── Memoized Behavior Trends (Part 2: Improvement Tracking) ───
   const behaviorTrends = useMemo<BehaviorTrend[]>(() => {
-    if (trades.length < 6) return [];
+    if (trades.length < 3) return [];
     return detectBehaviorTrends(trades as ProfileTrade[]);
   }, [trades]);
 
@@ -1691,15 +1712,28 @@ export default function AnalyzePage() {
         <div>
           <h1 className="text-3xl font-bold">Analyze Your Trades</h1>
           <p className="text-white/60">
-            {trades.length === 0
-              ? 'Upload a CSV or screenshot to begin analyzing your trading.'
-              : `${trades.length} trade${trades.length !== 1 ? 's' : ''} loaded — ${traderProfileState ? `Profile score: ${traderProfileState.improvementScore}/100` : 'select a trade to get started'}`
-            }
+            {loading && analysisPhase ? (
+              <span className="flex items-center gap-2 text-emerald-400">
+                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
+                {analysisPhase}
+              </span>
+            ) : loading ? (
+              <span className="flex items-center gap-2">
+                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
+                Processing trades...
+              </span>
+            ) : trades.length === 0 ? (
+              'Upload a CSV or screenshot to begin analyzing your trading.'
+            ) : (
+              <span>
+                {trades.length} trade{trades.length !== 1 ? 's' : ''} loaded{traderProfileState ? ` — Profile score: ${traderProfileState.improvementScore}/100` : ''}
+              </span>
+            )}
           </p>
         </div>
 
         {/* Section Navigation Tabs */}
-        {trades.length >= 2 && (
+        {trades.length >= 1 && (
           <div className="flex gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1 backdrop-blur-xl" role="tablist">
             {[
               { id: 'trades' as const, label: 'Trades', icon: '📊' },
@@ -1796,14 +1830,16 @@ export default function AnalyzePage() {
         )}
 
         {/* ─── Trader Profile Section (shown under Profile tab) ─── */}
-        {traderAnalytics && activeSection === 'profile' && (
+        {activeSection === 'profile' && (
           <div className="space-y-4">
             <h2 className="flex items-center gap-2 text-lg font-semibold text-white/80">
               <BarChart3 className="h-5 w-5 text-emerald-400" />
               Trader Profile
             </h2>
+            {traderAnalytics ? (
+            <>
             <p className="text-sm text-white/40 -mt-3">
-              Derived from {traderAnalytics.statistics.totalTrades} completed trades
+              Derived from {traderAnalytics.statistics.totalTrades} completed trade{traderAnalytics.statistics.totalTrades !== 1 ? 's' : ''}
             </p>
 
             {/* Card 1: Performance */}
@@ -1994,20 +2030,33 @@ export default function AnalyzePage() {
                 </CardContent>
               </Card>
             )}
+            </>
+            ) : (
+              <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
+                <CardContent className="py-6">
+                  <div className="flex flex-col items-center gap-2 text-center">
+                    <BarChart3 className="h-8 w-8 text-white/20" />
+                    <p className="text-sm text-white/40">Upload more trades to build your trader profile.</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
 
         {/* ─── Behavior Intelligence Section (shown under Analytics tab) ─── */}
-        {behaviorReport && (behaviorReport.strengths.length > 0 || behaviorReport.weaknesses.length > 0) && activeSection === 'analytics' && (
+        {activeSection === 'analytics' && (
           <div className="space-y-4">
             <h2 className="flex items-center gap-2 text-lg font-semibold text-white/80">
               <Target className="h-5 w-5 text-emerald-400" />
               Behavior Intelligence
             </h2>
             <p className="text-sm text-white/40 -mt-3">
-              Detected patterns from {trades.length} trades
+              Detected patterns from {trades.length} trade{trades.length !== 1 ? 's' : ''}
             </p>
 
+            {behaviorReport && (behaviorReport.strengths.length > 0 || behaviorReport.weaknesses.length > 0) ? (
+              <>
             {/* Biggest Strengths */}
             {behaviorReport.strengths.length > 0 && (
               <Card className="border border-emerald-500/20 bg-emerald-500/[0.04] backdrop-blur-xl">
@@ -2120,15 +2169,41 @@ export default function AnalyzePage() {
                 dangerouslySetInnerHTML={{ __html: JSON.stringify(coachOutput) }}
               />
             )}
+            </>
+            ) : (
+              <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
+                <CardContent className="py-6">
+                  <div className="flex flex-col items-center gap-2 text-center">
+                    <BarChart3 className="h-8 w-8 text-white/20" />
+                    <p className="text-sm text-white/40">
+                      {trades.length < 2
+                        ? 'Upload more trades to unlock behavioral pattern detection.'
+                        : 'No behavioral patterns detected yet. Upload more trades to unlock deeper insights.'}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
 
         {/* ─── Coach Dashboard (shown under Coach tab) ─── */}
-        {traderProfileState && activeSection === 'coach' && (
+        {activeSection === 'coach' && (
+          traderProfileState ? (
           <TradingCoach
             profile={traderProfileState}
             trends={behaviorTrends}
           />
+          ) : (
+          <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
+            <CardContent className="py-6">
+              <div className="flex flex-col items-center gap-2 text-center">
+                <Target className="h-8 w-8 text-white/20" />
+                <p className="text-sm text-white/40">Upload more trades to generate coaching insights.</p>
+              </div>
+            </CardContent>
+          </Card>
+          )
         )}
 
         {/* Upload Card (visible under Trades tab) */}

@@ -110,7 +110,7 @@ function formatMinutes(mins: number): string {
  * than the trader's average position size.
  */
 function detectOversizingLosingTrades(trades: BehaviorTrade[]): BehaviorPattern | null {
-  if (trades.length < 5) return null;
+  if (trades.length < 3) return null;
 
   const sizes = trades.map(t => getNumericSize(t)).filter(s => s > 0);
   const avgSize = sizes.length > 0
@@ -161,7 +161,7 @@ function detectOversizingLosingTrades(trades: BehaviorTrade[]): BehaviorPattern 
  * exceeds the average hold time for winning trades.
  */
 function detectHoldingLosersTooLong(trades: BehaviorTrade[]): BehaviorPattern | null {
-  if (trades.length < 5) return null;
+  if (trades.length < 3) return null;
 
   const winnerHoldTimes: number[] = [];
   const loserHoldTimes: number[] = [];
@@ -213,7 +213,7 @@ function detectHoldingLosersTooLong(trades: BehaviorTrade[]): BehaviorPattern | 
  * positive missed amounts (indicating exits that left money behind).
  */
 function detectCuttingWinnersEarly(trades: BehaviorTrade[]): BehaviorPattern | null {
-  if (trades.length < 3) return null;
+  if (trades.length < 2) return null;
 
   // Only trades with tradeMetrics and a valid missedAmount
   const tradesWithMetrics = trades.filter(t =>
@@ -268,7 +268,7 @@ function detectCuttingWinnersEarly(trades: BehaviorTrade[]): BehaviorPattern | n
  * Uses entry timestamps to detect hour windows with significantly lower win rates.
  */
 function detectPoorHourPerformance(trades: BehaviorTrade[]): BehaviorPattern | null {
-  if (trades.length < 10) return null;
+  if (trades.length < 5) return null;
 
   const hourBuckets: Record<number, { wins: number; total: number }> = {};
 
@@ -362,7 +362,7 @@ function detectPoorHourPerformance(trades: BehaviorTrade[]): BehaviorPattern | n
  * - Loss followed by an immediate next trade
  */
 function detectRevengeTrading(trades: BehaviorTrade[]): BehaviorPattern | null {
-  if (trades.length < 5) return null;
+  if (trades.length < 3) return null;
 
   // Sort trades by timestamp (chronological)
   const sorted = [...trades]
@@ -484,7 +484,7 @@ function detectRevengeTrading(trades: BehaviorTrade[]): BehaviorPattern | null {
  * Compares LONG vs SHORT performance and reports whichever is weaker (or stronger).
  */
 function detectDirectionIssues(trades: BehaviorTrade[]): BehaviorPattern | null {
-  if (trades.length < 5) return null;
+  if (trades.length < 3) return null;
 
   let longPls: number[] = [];
   let shortPls: number[] = [];
@@ -549,7 +549,7 @@ function detectDirectionIssues(trades: BehaviorTrade[]): BehaviorPattern | null 
  * Detects if morning trades significantly outperform the overall average.
  */
 function detectMorningEdge(trades: BehaviorTrade[]): BehaviorPattern | null {
-  if (trades.length < 10) return null;
+  if (trades.length < 5) return null;
 
   const morningTrades: BehaviorTrade[] = [];
   const afternoonTrades: BehaviorTrade[] = [];
@@ -604,7 +604,7 @@ function detectMorningEdge(trades: BehaviorTrade[]): BehaviorPattern | null {
  * Detects if losses are well-contained relative to winners.
  */
 function detectRiskControl(trades: BehaviorTrade[]): BehaviorPattern | null {
-  if (trades.length < 5) return null;
+  if (trades.length < 3) return null;
 
   const winnerPLs: number[] = [];
   const loserPLs: number[] = [];
@@ -655,7 +655,7 @@ function detectRiskControl(trades: BehaviorTrade[]): BehaviorPattern | null {
  * Finds the best-performing ticker and reports it as a strength if performance is strong.
  */
 function detectTickerStrength(trades: BehaviorTrade[]): BehaviorPattern | null {
-  if (trades.length < 5) return null;
+  if (trades.length < 3) return null;
 
   const tickerData: Record<string, { wins: number; total: number; pl: number }> = {};
 
@@ -715,7 +715,7 @@ function detectTickerStrength(trades: BehaviorTrade[]): BehaviorPattern | null {
  * Detects if the trader has a balanced, consistent approach.
  */
 function detectConsistencyPattern(trades: BehaviorTrade[]): BehaviorPattern | null {
-  if (trades.length < 15) return null;
+  if (trades.length < 8) return null;
 
   const pls: number[] = [];
   for (const t of trades) {
@@ -761,7 +761,7 @@ function detectConsistencyPattern(trades: BehaviorTrade[]): BehaviorPattern | nu
  * Detects how active the trader is.
  */
 function detectActivityPattern(trades: BehaviorTrade[]): BehaviorPattern | null {
-  if (trades.length < 3) return null;
+  if (trades.length < 2) return null;
 
   // Use entry timestamps to detect preferred time
   const hourCounts: Record<number, number> = {};
