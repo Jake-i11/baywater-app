@@ -110,18 +110,27 @@ export default function LoginPage() {
               {loading ? "..." : isSignUp ? "Create account" : "Log in"}
             </Button>
 
-            <button
-              onClick={() => { setIsSignUp(!isSignUp); setError(""); }}
-              className="w-full text-center text-sm text-white/40 hover:text-white/70"
-            >
-              {isSignUp ? "Already have an account? Log in" : "No account? Sign up"}
-            </button>
+             <button
+               onClick={() => { setIsSignUp(!isSignUp); setError(""); }}
+               className="w-full text-center text-sm text-white/40 hover:text-white/70"
+             >
+               {isSignUp ? "Already have an account? Log in" : "No account? Sign up"}
+             </button>
 
-            <div className="relative flex items-center gap-3">
-              <div className="h-px flex-1 bg-white/10" />
-              <span className="text-xs text-white/30">or</span>
-              <div className="h-px flex-1 bg-white/10" />
-            </div>
+             {!isSignUp && (
+               <button
+                 onClick={() => window.location.href = "/forgot-password"}
+                 className="w-full text-center text-sm text-white/40 hover:text-white/70"
+               >
+                 Forgot password?
+               </button>
+             )}
+
+             <div className="relative flex items-center gap-3">
+               <div className="h-px flex-1 bg-white/10" />
+               <span className="text-xs text-white/30">or</span>
+               <div className="h-px flex-1 bg-white/10" />
+             </div>
 
             <a href="/" className="block w-full rounded-md border border-white/10 py-2 text-center text-sm text-white/50 transition hover:border-white/20 hover:text-white/80">Continue as guest</a>
           </CardContent>
