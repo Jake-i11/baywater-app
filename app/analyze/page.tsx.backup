@@ -1,0 +1,1262 @@
+"use client"
+
+import { useState, useEffect, useCallback, useRef } from "react"
+import { supabase } from "@/lib/supabase"
+import { Plus, UploadCloud, FileText, BarChart3, Sparkles, Flag, ShieldCheck } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import type { User } from "@supabase/supabase-js"
+import Link from "next/link"
+import { TradeChart } from "@/components/TradeChart"
+import { TradeMetricsCard } from "@/components/TradeMetricsCard"
+import { AIReviewCard } from "@/components/AIReviewCard"
+import { BehavioralFlagsCard } from "@/components/BehavioralFlagsCard"
+import { RuleComplianceCard } from "@/components/RuleComplianceCard"
+import { formatPL, formatNumber } from "@/lib/utils"
+import {
+  calculateViolationCost,
+  calculateDisciplineScore,
+  checkDangerousWin,
+  calculateTradeMetricsForTrade
+} from "@/lib/trade-utils"
+
+interface TradeData {
+  localId: string
+  id?: string
+  ticker: string
+  direction: string
+  side: string
+  entry_price: string | null
+  exit_price: string | null
+  size: string
+  entry_time: string | null
+  exit_time: string | null
+  timestamp: string | null
+  realized_pl: string | null
+  holdTime: number | null
+  violations: string[]
+  violationsCount: number
+  discipline_score: number | null
+  violation_cost: string | null
+  displayTime?: string
+  chartData: any | null
+  tradeMetrics: any | null
+  aiReview: any | null
+  aiReviewGeneratedAt: number | null
+  behaviorTags: string[]
+  behaviorSeverity: string
+  behaviorSummary: string
+  rawData?: any
+}
+
+export default function AnalyzePage() {
+  const [file, setFile] = useState<File | null>(null)
+  const [trades, setTrades] = useState<TradeData[]>([])
+  const [selectedTradeIndex, setSelectedTradeIndex] = useState<number | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [user, setUser] = useState<User | null>(null)
+  const [candles, setCandles] = useState<any[]>([])
+  const [chartLoading, setChartLoading] = useState(false)
+  const [coachingResponse, setCoachingResponse] = useState<any | null>(null)
+  const [aiReviewLoading, setAiReviewLoading] = useState(false)
+  const [chartError, setChartError] = useState<string | null>(null)
+  const [analysisPhase, setAnalysisPhase] = useState<string | null>(null)
+  const [analysisResult, setAnalysisResult] = useState<{
+    success: boolean
+    message: string
+    tradeCount?: number
+  } | null>(null)
+  const [showFailureMessage, setShowFailureMessage] = useState<string | null>(null)
+
+  const pendingChartTrade = useRef<string | null>(null)
+  const pendingReviewTrade = useRef<string | null>(null)
+
+  const selectedTrade = selectedTradeIndex !== null ? trades[selectedTradeIndex] : null
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setUser(data.session?.user ?? null)
+    })
+    const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
+      setUser(session?.user ?? null)
+    })
+    return () => listener.subscription.unsubscribe()
+  }, [])
+
+  // Handle trade selection changes
+  useEffect(() => {
+    if (selectedTradeIndex === null || selectedTradeIndex >= trades.length) {
+      setCandles([])
+      setCoachingResponse(null)
+      setChartError(null)
+      return
+    }
+
+    const trade = trades[selectedTradeIndex]
+    if (!trade) return
+
+    const tradeId = trade.localId
+    pendingChartTrade.current = tradeId
+    pendingReviewTrade.current = null
+
+    // Check chart cache first
+    if (trade.chartData) {
+      setCandles(trade.chartData.candles)
+      setChartLoading(false)
+      setChartError(null)
+    } else {
+      setChartLoading(false)
+      setCandles([])
+      setChartError(null)
+    }
+
+    setCoachingResponse(null)
+
+    // Fetch AI review if user is logged in and trade has an ID
+    if (user && trade.id) {
+      fetchOrGenerateAIReview(trade.id, trade.ticker)
+    }
+  }, [selectedTradeIndex, trades, user])
+
+  async function fetchOrGenerateAIReview(tradeId: string, ticker: string) {
+    pendingReviewTrade.current = tradeId
+    setAiReviewLoading(true)
+
+    try {
+      // Check trade state cache first
+      const localTrade = trades.find(t => t.id === tradeId)
+      if (localTrade?.aiReview && localTrade?.aiReviewGeneratedAt) {
+        setCoachingResponse(localTrade.aiReview)
+        setAiReviewLoading(false)
+        return
+      }
+
+      // Try to fetch from DB
+      const { data: dbTrade } = await supabase
+        .from('trades')
+        .select('ai_review, entry_time')
+        .eq('id', tradeId)
+        .single()
+
+      if (pendingReviewTrade.current !== tradeId) return
+
+      if (dbTrade?.ai_review) {
+        try {
+          const parsedReview = typeof dbTrade.ai_review === 'string'
+            ? JSON.parse(dbTrade.ai_review)
+            : dbTrade.ai_review
+          if (parsedReview && parsedReview.grade) {
+            setCoachingResponse(parsedReview)
+            setTrades(prev => prev.map(t =>
+              t.id === tradeId
+                ? { ...t, aiReview: parsedReview, aiReviewGeneratedAt: Date.now() }
+                : t
+            ))
+            setAiReviewLoading(false)
+            return
+          }
+        } catch {
+          // Continue to generate
+        }
+      }
+
+      // Trigger enrichment
+      const enrichResponse = await fetch("/api/analyze/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tradeId, ticker }),
+      })
+
+      if (pendingReviewTrade.current !== tradeId) return
+
+      if (enrichResponse.ok) {
+        const { data: updatedTrade } = await supabase
+          .from('trades')
+          .select('ai_review')
+          .eq('id', tradeId)
+          .single()
+
+        if (pendingReviewTrade.current !== tradeId) return
+
+            if (updatedTrade?.ai_review) {
+              try {
+                const parsedReview = typeof updatedTrade.ai_review === 'string'
+                  ? JSON.parse(updatedTrade.ai_review)
+                  : updatedTrade.ai_review
+                if (parsedReview && parsedReview.grade) {
+                  setCoachingResponse(parsedReview)
+                  setTrades(prev => prev.map(t =>
+                    t.id === tradeId
+                      ? { ...t, aiReview: parsedReview, aiReviewGeneratedAt: Date.now() }
+                      : t
+                  ))
+                }
+              } catch {
+                setCoachingResponse(null)
+              }
+            }
+      }
+    } catch (error) {
+      console.error(`Error fetching/generating AI review for trade ${tradeId}:`, error)
+      if (pendingReviewTrade.current === tradeId) {
+        setCoachingResponse(null)
+      }
+    } finally {
+      if (pendingReviewTrade.current === tradeId) {
+        setAiReviewLoading(false)
+      }
+    }
+  }
+
+  async function fetchChartData(
+    ticker: string,
+    entryTimeStr: string | null | undefined,
+    exitTimeStr: string | null | undefined,
+    requestId?: string
+  ) {
+    try {
+      setChartLoading(true)
+      setCandles([])
+      setChartError(null)
+
+      if (!entryTimeStr) {
+        console.warn(`fetchChartData: skipping chart fetch for ${ticker} — no entry time provided`)
+        return
+      }
+
+      const response = await fetch("/api/chart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ticker,
+          startTime: new Date(entryTimeStr).toISOString(),
+          endTime: exitTimeStr ? new Date(exitTimeStr).toISOString() : new Date(new Date(entryTimeStr).getTime() + 2 * 60 * 60 * 1000).toISOString(),
+        }),
+      })
+
+      if (requestId && pendingChartTrade.current !== requestId) return
+
+      if (response.ok) {
+        const chartData = await response.json()
+        const candlesCount = chartData.candles?.length || 0
+
+        if (requestId && pendingChartTrade.current !== requestId) return
+
+        if (candlesCount > 0) {
+          setTrades(prev => prev.map(t =>
+            t.localId === requestId
+              ? {
+                  ...t,
+                  chartData: { candles: chartData.candles, fetchedAt: Date.now() },
+                  tradeMetrics: calculateTradeMetricsForTrade(t, chartData.candles)
+                }
+              : t
+          ))
+          setCandles(chartData.candles)
+        } else {
+          console.warn(`Chart API returned 0 candles for ${ticker}`)
+          setChartError(`No chart data returned for ${ticker}`)
+        }
+      } else {
+        let errorMsg = response.statusText
+        try {
+          const errBody = await response.json()
+          if (errBody.error) errorMsg = errBody.error
+        } catch {}
+        console.error("Failed to fetch chart data:", errorMsg)
+        if (!requestId || pendingChartTrade.current === requestId) {
+          setChartError(`Chart fetch failed: ${errorMsg}`)
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching chart data:", error)
+      if (!requestId || pendingChartTrade.current === requestId) {
+        setChartError(`Error fetching chart data: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    } finally {
+      if (!requestId || pendingChartTrade.current === requestId) {
+        setChartLoading(false)
+      }
+    }
+  }
+
+   /**
+    * Normalize and validate field values for Supabase insertion
+    * Converts string values to appropriate types and handles invalid values
+    */
+   function normalizeFieldValue(value: any, fieldType: 'integer' | 'numeric' | 'string' | 'json'): any {
+     if (value === null || value === undefined) {
+       return null;
+     }
+
+     switch (fieldType) {
+       case 'integer':
+         // Handle string values that should be integers
+         if (typeof value === 'string') {
+           if (value.trim() === '' || value.trim().toLowerCase() === 'null' || value.trim().toLowerCase() === 'n/a') {
+             return null;
+           }
+           const num = Number(value);
+           return isNaN(num) ? null : Math.round(num);
+         }
+         // Handle boolean values
+         if (typeof value === 'boolean') {
+           return value ? 1 : 0;
+         }
+         // Handle numeric values
+         if (typeof value === 'number') {
+           return Math.round(value);
+         }
+         // Handle invalid types
+         return null;
+
+       case 'numeric':
+         // Handle string values that should be numeric
+         if (typeof value === 'string') {
+           if (value.trim() === '' || value.trim().toLowerCase() === 'null' || value.trim().toLowerCase() === 'n/a') {
+             return null;
+           }
+           const num = Number(value);
+           return isNaN(num) ? null : num;
+         }
+         // Handle boolean values
+         if (typeof value === 'boolean') {
+           return value ? 1 : 0;
+         }
+         // Handle numeric values
+         if (typeof value === 'number') {
+           return value;
+         }
+         // Handle invalid types
+         return null;
+
+       case 'string':
+         // Convert non-string values to strings, but handle null/undefined
+         if (value === null || value === undefined) {
+           return null;
+         }
+         return String(value);
+
+       case 'json':
+         // Handle JSON serialization
+         if (typeof value === 'object') {
+           return JSON.stringify(value);
+         }
+         if (typeof value === 'string') {
+           try {
+             // If it's already a JSON string, parse and re-stringify to validate
+             JSON.parse(value);
+             return value;
+           } catch {
+             // If not valid JSON, return as-is or null?
+             return value;
+           }
+         }
+         return value;
+
+       default:
+         return value;
+     }
+   }
+
+   /**
+    * Save trades to Supabase database
+    * @param trades Array of TradeData objects
+    * @param userId Authenticated user ID
+    */
+   /**
+    * Fetch chart data and update Supabase for a single trade
+    */
+   async function fetchAndSaveChartData(trade: TradeData, tradeIndex: number) {
+     try {
+       console.log(`[CHART] Fetching chart for ${trade.ticker} (trade ${tradeIndex + 1}/${trades.length})`);
+       console.log(`[CHART] Entry: ${trade.entry_time}`);
+       console.log(`[CHART] Exit: ${trade.exit_time}`);
+
+       if (!trade.entry_time || !trade.id) {
+         console.warn(`[CHART] Skipping chart fetch for trade ${trade.id} - missing entry time or trade ID`);
+         return;
+       }
+
+       // Calculate end time (exit time or 2 hours after entry)
+       const exitTime = trade.exit_time || new Date(new Date(trade.entry_time).getTime() + 2 * 60 * 60 * 1000).toISOString();
+       console.log(`[CHART] Alpaca request - Start: ${trade.entry_time}, End: ${exitTime}`);
+
+       const response = await fetch("/api/chart", {
+         method: "POST",
+         headers: { "Content-Type": "application/json" },
+         body: JSON.stringify({
+           ticker: trade.ticker,
+           startTime: trade.entry_time,
+           endTime: exitTime,
+         }),
+       });
+
+       if (!response.ok) {
+         const errorData = await response.json().catch(() => ({}));
+         console.error(`[CHART] Failed to fetch chart for ${trade.ticker}:`, errorData);
+         return;
+       }
+
+       const chartData = await response.json();
+       const candlesCount = chartData.candles?.length || 0;
+       console.log(`[CHART] Candles returned: ${candlesCount}`);
+
+       if (candlesCount > 0) {
+         // Update Supabase with chart data
+         console.log(`[DB UPDATE] Updating chart_data for trade: ${trade.id}`);
+         const { error: updateError } = await supabase
+           .from('trades')
+           .update({
+             chart_data: chartData
+           })
+           .eq('id', trade.id);
+
+         if (updateError) {
+           console.error(`[DB UPDATE] Failed to save chart_data for trade ${trade.id}:`, updateError);
+         } else {
+           console.log(`[DB UPDATE] chart_data saved for trade: ${trade.id}`);
+         }
+       } else {
+         console.warn(`[CHART] No candles returned for ${trade.ticker}`);
+       }
+
+     } catch (error) {
+       console.error(`[CHART] Error fetching chart data for ${trade.ticker}:`, error);
+     }
+   }
+
+   /**
+    * Trigger AI review generation for a trade
+    */
+   async function triggerAIReviewGeneration(trade: TradeData) {
+     try {
+       if (!trade.id || !trade.entry_time) {
+         console.warn(`[AI] Skipping AI review for trade ${trade.id} - missing trade ID or entry time`);
+         return;
+       }
+
+       console.log(`[AI] Starting review generation for trade: ${trade.id}`);
+
+       const response = await fetch("/api/analyze/enrich", {
+         method: "POST",
+         headers: { "Content-Type": "application/json" },
+         body: JSON.stringify({
+           tradeId: trade.id,
+           ticker: trade.ticker,
+           tradeDate: trade.entry_time
+         }),
+       });
+
+       if (!response.ok) {
+         const errorData = await response.json().catch(() => ({}));
+         console.error(`[AI] Failed to generate AI review for trade ${trade.id}:`, errorData);
+       } else {
+         console.log(`[AI] Review generation completed for trade: ${trade.id}`);
+       }
+
+     } catch (error) {
+       console.error(`[AI] Error generating AI review for trade ${trade.id}:`, error);
+     }
+   }
+
+   async function saveTradesToSupabase(trades: TradeData[], userId: string) {
+     try {
+       // Prepare trades for Supabase insert - only include valid database columns
+       const tradesToInsert = trades.map(trade => {
+         // Build payload with only valid database columns
+         const payload: any = {
+           ticker: trade.ticker,
+           direction: trade.direction,
+           entry_price: trade.entry_price ? parseFloat(trade.entry_price) : null,
+           exit_price: trade.exit_price ? parseFloat(trade.exit_price) : null,
+           size: trade.size,
+           entry_time: trade.entry_time,
+           exit_time: trade.exit_time,
+           realized_pl: trade.realized_pl ? parseFloat(trade.realized_pl) : null,
+           hold_time: trade.holdTime,
+           violations: JSON.stringify(trade.violations),
+           discipline_score: trade.discipline_score,
+           violation_cost: trade.violation_cost ? parseFloat(trade.violation_cost) : null,
+           user_id: userId,
+           created_at: new Date().toISOString()
+         }
+
+         // Add optional fields if they exist in the trade data
+         if (trade.rawData) {
+           if (trade.rawData.order_date) payload.order_date = trade.rawData.order_date;
+           if (trade.rawData.transaction_date) payload.transaction_date = trade.rawData.transaction_date;
+           if (trade.rawData.source) payload.source = trade.rawData.source;
+           if (trade.rawData.float) payload.float = normalizeFieldValue(trade.rawData.float, 'numeric');
+           if (trade.rawData.chart_data) payload.chart_data = normalizeFieldValue(trade.rawData.chart_data, 'json');
+           if (trade.rawData.float_shares) payload.float_shares = normalizeFieldValue(trade.rawData.float_shares, 'numeric');
+           if (trade.rawData.market_cap) payload.market_cap = normalizeFieldValue(trade.rawData.market_cap, 'numeric');
+           if (trade.rawData.avg_volume) payload.avg_volume = normalizeFieldValue(trade.rawData.avg_volume, 'numeric');
+           if (trade.rawData.day_volume) payload.day_volume = normalizeFieldValue(trade.rawData.day_volume, 'numeric');
+           if (trade.rawData.relative_volume) payload.relative_volume = normalizeFieldValue(trade.rawData.relative_volume, 'numeric');
+           if (trade.rawData.sector) payload.sector = trade.rawData.sector;
+           if (trade.aiReview) payload.ai_review = normalizeFieldValue(trade.aiReview, 'json');
+           if (trade.rawData.ai_replay) payload.ai_replay = trade.rawData.ai_replay;
+           if (trade.rawData.setup_quality) payload.setup_quality = normalizeFieldValue(trade.rawData.setup_quality, 'integer');
+           if (trade.rawData.trade_grade) payload.trade_grade = trade.rawData.trade_grade;
+           if (trade.rawData.setup_type) payload.setup_type = trade.rawData.setup_type;
+           if (trade.rawData.setup_confidence) payload.setup_confidence = normalizeFieldValue(trade.rawData.setup_confidence, 'integer');
+           if (trade.rawData.decision_quality) payload.decision_quality = normalizeFieldValue(trade.rawData.decision_quality, 'json');
+         }
+
+         return payload;
+       })
+
+       // Add debug log as requested
+       console.log("[DB INSERT] Final payload:", JSON.stringify(tradesToInsert[0], null, 2))
+
+       // Validate integer fields specifically mentioned in requirements
+       tradesToInsert.forEach((payload, index) => {
+         const integerFields = ['discipline_score', 'setup_quality', 'setup_confidence', 'hold_time'];
+         integerFields.forEach(field => {
+           if (payload[field] !== null && payload[field] !== undefined) {
+             if (typeof payload[field] !== 'number' || !Number.isInteger(payload[field])) {
+               console.warn(`[DB VALIDATION] Trade ${index}: ${field} is not a valid integer:`, payload[field]);
+               payload[field] = null;
+             }
+           }
+         });
+       });
+
+      // Insert trades into Supabase
+      const { data, error } = await supabase
+        .from('trades')
+        .insert(tradesToInsert)
+        .select()
+
+      if (error) {
+        console.error('[DB INSERT] Error message:', error.message)
+        console.error('[DB INSERT] Error code:', error.code)
+        console.error('[DB INSERT] Error details:', error.details)
+        console.error('[DB INSERT] Error hint:', error.hint)
+        throw error
+      }
+
+      console.log('[DB INSERT] Returned data:', data)
+
+        // Update local trades with database IDs
+      if (data && data.length > 0) {
+        const updatedTrades = (prevTrades: TradeData[]): TradeData[] => {
+          return prevTrades.map((trade: TradeData, index: number) => {
+            if (data[index]) {
+              return {
+                ...trade,
+                id: data[index].id
+              }
+            }
+            return trade
+          })
+        }
+
+        setTrades(updatedTrades)
+
+        // [PIPELINE] Post-insert processing: Fetch chart data and generate AI reviews
+        console.log("[PIPELINE] Starting post-insert processing for", data.length, "trades");
+
+        // Process trades sequentially to avoid overwhelming APIs
+        for (let i = 0; i < data.length; i++) {
+          const tradeWithId = updatedTrades(trades)[i];
+
+          if (tradeWithId?.id) {
+            // Fetch chart data for this trade
+            await fetchAndSaveChartData(tradeWithId, i);
+
+            // Trigger AI review generation
+            await triggerAIReviewGeneration(tradeWithId);
+          }
+        }
+
+        console.log("[PIPELINE] Post-insert processing completed");
+      }
+
+      return data
+    } catch (error) {
+      console.error('[DB INSERT] Failed to save trades:', error)
+      setShowFailureMessage("Failed to save trades to database. Please check console for details.")
+      throw error
+    }
+  }
+
+  async function handleUpload(uploadedFile = file) {
+    console.log("[UPLOAD] handleUpload called", uploadedFile)
+    if (!uploadedFile) {
+      console.log("[UPLOAD] No file provided")
+      return
+    }
+    console.log("[UPLOAD] Processing file:", uploadedFile.name)
+    setLoading(true)
+    setTrades([])
+    setSelectedTradeIndex(null)
+    setCandles([])
+    setCoachingResponse(null)
+    setChartLoading(false)
+    setAnalysisResult(null)
+    setShowFailureMessage(null)
+
+    try {
+      if (uploadedFile.name.endsWith('.csv')) {
+        setAnalysisPhase("Parsing trades...")
+        await new Promise(r => setTimeout(r, 50))
+
+        const content = await uploadedFile.text()
+        const parsedTrades = parseCSVContent(content)
+
+        // [ANALYZE] Debugging logs
+        console.log('[ANALYZE] Extracted trades count:', parsedTrades.length)
+        if (parsedTrades.length > 0) {
+          console.log('[ANALYZE] First extracted trade:', parsedTrades[0])
+        }
+
+        if (parsedTrades.length === 0) {
+          setShowFailureMessage("No trades found. Please check that your CSV format contains valid trade information.")
+          setLoading(false)
+          return
+        }
+
+        // Build TradeData[] with local violations/display info
+        const tradeList: TradeData[] = parsedTrades.map((trade: any, idx: number) => {
+          const entryPrice = trade.entry_price || trade.price || null
+          const exitPrice = trade.exit_price || null
+          const entryTime = trade.entry_time || trade.timestamp || null
+          const exitTime = trade.exit_time || null
+          const realizedPl = trade.realized_pl ? parseFloat(trade.realized_pl) : null
+
+          let tradeViolations = checkRules({
+            ticker: trade.ticker,
+            price: entryPrice ? parseFloat(entryPrice) : undefined,
+            time: entryTime
+          })
+          tradeViolations = checkDangerousWin(tradeViolations, realizedPl)
+          const violationCost = calculateViolationCost(tradeViolations, realizedPl)
+          const disciplineScore = calculateDisciplineScore(tradeViolations)
+
+          // Precomputed P&L
+          let computedPL: string | null
+          if (realizedPl !== null && !isNaN(realizedPl)) {
+            computedPL = realizedPl.toFixed(2)
+          } else {
+            const fallbackPL = computePLValue({
+              entry_price: entryPrice,
+              exit_price: exitPrice,
+              size: trade.size,
+              direction: trade.direction
+            })
+            computedPL = fallbackPL !== null ? fallbackPL.toFixed(2) : null
+          }
+
+          // Precomputed hold time
+          const holdTime = computeHoldTime(entryTime, exitTime)
+
+          // Normalized side
+          const side = normalizeSide(trade.direction)
+
+          let displayTime: string
+          if (entryTime) {
+            const parsed = parseTradeTime(entryTime)
+            if (parsed) {
+              displayTime = parsed.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+            } else {
+              const d = new Date(entryTime)
+              if (!isNaN(d.getTime())) {
+                displayTime = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+              } else {
+                displayTime = entryTime
+              }
+            }
+          } else if (trade.timestamp) {
+            const parsed = parseTradeTime(trade.timestamp)
+            displayTime = parsed ? parsed.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : trade.timestamp
+          } else {
+            displayTime = 'Missing'
+          }
+
+          return {
+            localId: `trade_${Date.now()}_${idx}`,
+            id: undefined,
+            ticker: trade.ticker,
+            direction: trade.direction ? trade.direction.toLowerCase() : 'long',
+            side,
+            entry_price: entryPrice,
+            exit_price: exitPrice,
+            size: trade.size,
+            entry_time: entryTime,
+            exit_time: exitTime,
+            timestamp: trade.timestamp || entryTime || null,
+            realized_pl: computedPL,
+            holdTime,
+            violations: tradeViolations,
+            violationsCount: tradeViolations.length,
+            discipline_score: disciplineScore,
+            violation_cost: violationCost.toFixed(2),
+            displayTime,
+            chartData: null,
+            tradeMetrics: null,
+            aiReview: null,
+            aiReviewGeneratedAt: null,
+            behaviorTags: [],
+            behaviorSeverity: 'low',
+            behaviorSummary: '',
+            rawData: trade
+          }
+        })
+
+        setAnalysisPhase("Processing trades...")
+        await new Promise(r => setTimeout(r, 50))
+
+        // [DB INSERT] Debugging logs
+        console.log('[DB INSERT] Current authenticated user:', user)
+        console.log('[DB INSERT] User ID:', user?.id)
+
+        // Save trades to Supabase if user is authenticated
+        if (user) {
+          setAnalysisPhase("Saving trades to database...")
+          await saveTradesToSupabase(tradeList, user.id)
+        } else {
+          console.log('[DB INSERT] No authenticated user - trades will not be saved')
+          setShowFailureMessage("You need to be logged in to save trades. Please sign in to save your analyzed trades.")
+        }
+
+        setTrades(tradeList)
+        if (tradeList.length > 0) {
+          setSelectedTradeIndex(0)
+          setAnalysisResult({
+            success: true,
+            message: `CSV analyzed successfully. Found ${tradeList.length} trade${tradeList.length === 1 ? '' : 's'}.`,
+            tradeCount: tradeList.length
+          })
+          setShowFailureMessage(null)
+        } else {
+          setAnalysisResult(null)
+          setShowFailureMessage("No trades found. Please check that your CSV format contains valid trade information.")
+        }
+        setAnalysisPhase(null)
+      } else if (uploadedFile.type.startsWith('image/')) {
+        // Handle screenshot analysis
+        setAnalysisPhase("Analyzing screenshot...")
+        await new Promise(r => setTimeout(r, 50))
+
+        try {
+          const formData = new FormData()
+          formData.append('file', uploadedFile)
+
+          const response = await fetch('/api/analyze', {
+            method: 'POST',
+            body: formData
+          })
+
+          if (!response.ok) {
+            throw new Error('Screenshot analysis failed')
+          }
+
+          const tradeData = await response.json()
+
+          if (!tradeData || !tradeData.ticker) {
+            setShowFailureMessage("No trades found. Please check that your screenshot contains valid trade information.")
+            return
+          }
+
+          // Build TradeData from screenshot analysis
+          const tradeList: TradeData[] = [{
+            localId: `trade_${Date.now()}_0`,
+            id: undefined,
+            ticker: tradeData.ticker,
+            direction: tradeData.direction ? tradeData.direction.toLowerCase() : 'long',
+            side: normalizeSide(tradeData.direction),
+            entry_price: tradeData.entry,
+            exit_price: tradeData.exit,
+            size: tradeData.size,
+            entry_time: tradeData.time,
+            exit_time: tradeData.exit_time,
+            timestamp: tradeData.time || null,
+            realized_pl: computePLValue({
+              entry_price: tradeData.entry,
+              exit_price: tradeData.exit,
+              size: tradeData.size,
+              direction: tradeData.direction
+            })?.toFixed(2) || null,
+            holdTime: computeHoldTime(tradeData.time, tradeData.exit_time),
+            violations: checkRules({
+              ticker: tradeData.ticker,
+              price: tradeData.entry ? parseFloat(tradeData.entry) : undefined,
+              time: tradeData.time
+            }),
+            violationsCount: 0,
+            discipline_score: null,
+            violation_cost: null,
+            displayTime: tradeData.time ? new Date(tradeData.time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : 'Missing',
+            chartData: null,
+            tradeMetrics: null,
+            aiReview: null,
+            aiReviewGeneratedAt: null,
+            behaviorTags: [],
+            behaviorSeverity: 'low',
+            behaviorSummary: '',
+            rawData: tradeData
+          }]
+
+          // [DB INSERT] Debugging logs
+          console.log('[DB INSERT] Current authenticated user:', user)
+          console.log('[DB INSERT] User ID:', user?.id)
+
+          // Save trades to Supabase if user is authenticated
+          if (user) {
+            setAnalysisPhase("Saving trades to database...")
+            await saveTradesToSupabase(tradeList, user.id)
+          } else {
+            console.log('[DB INSERT] No authenticated user - trades will not be saved')
+            setShowFailureMessage("You need to be logged in to save trades. Please sign in to save your analyzed trades.")
+          }
+
+          setTrades(tradeList)
+          setSelectedTradeIndex(0)
+          setAnalysisResult({
+            success: true,
+            message: `Screenshot analyzed successfully. Found ${tradeList.length} trade${tradeList.length === 1 ? '' : 's'}.`,
+            tradeCount: tradeList.length
+          })
+          setShowFailureMessage(null)
+        } catch (error) {
+          console.error("Error analyzing screenshot:", error)
+          setShowFailureMessage("Analysis failed. Please try again.")
+        }
+        setAnalysisPhase(null)
+      } else {
+        setShowFailureMessage("Unsupported file type. Please upload a CSV file or screenshot image.")
+      }
+     } catch (error) {
+       console.error("Error handling upload:", error)
+       setShowFailureMessage("Analysis failed. Please try again.")
+     } finally {
+       setLoading(false)
+     }
+  }
+
+   // Helper functions (simplified versions from original)
+   /**
+    * Calculate hold time in minutes (for database storage)
+    * Returns null for open trades or invalid data
+    */
+   function computeHoldTime(entryTime: string | null | undefined, exitTime: string | null | undefined): number | null {
+     if (!entryTime || !exitTime) return null
+
+     const entryMs = new Date(entryTime).getTime()
+     const exitMs = new Date(exitTime).getTime()
+
+     if (isNaN(entryMs) || isNaN(exitMs)) return null
+
+     const diffMs = exitMs - entryMs
+     if (diffMs < 0) return null
+
+     return Math.round(diffMs / 60000) // Return total minutes as integer
+   }
+
+   /**
+    * Format hold time for display (kept for UI purposes)
+    */
+   function formatHoldTime(holdTimeMinutes: number | null): string {
+     if (holdTimeMinutes === null) return "Open trade"
+
+     if (holdTimeMinutes < 1) return "<1m"
+     if (holdTimeMinutes < 60) return `${holdTimeMinutes}m`
+
+     const hours = Math.floor(holdTimeMinutes / 60)
+     const minutes = holdTimeMinutes % 60
+
+     if (minutes === 0) return `${hours}h`
+     return `${hours}h ${minutes}m`
+   }
+
+  function computePLValue(trade: { entry_price: string | null | undefined; exit_price: string | null | undefined; size: string | null | undefined; direction?: string }): number | null {
+    const entry = trade.entry_price ? parseFloat(trade.entry_price) : null
+    const exit = trade.exit_price ? parseFloat(trade.exit_price) : null
+    const size = trade.size ? parseFloat(trade.size) : null
+
+    if (entry === null || exit === null || size === null) return null
+
+    const isShort = trade.direction?.toLowerCase() === 'short'
+
+    if (isShort) {
+      return (entry - exit) * size
+    } else {
+      return (exit - entry) * size
+    }
+  }
+
+  function normalizeSide(direction: string | undefined | null): string {
+    const d = (direction || '').toLowerCase()
+    if (d === 'short' || d === 'sell') return 'SHORT'
+    return 'LONG'
+  }
+
+  function parseTradeTime(timeStr: string | null | undefined): Date | null {
+    if (!timeStr || typeof timeStr !== 'string' || timeStr.trim() === '') {
+      return null
+    }
+
+    const trimmed = timeStr.trim()
+
+    if (trimmed === 'Invalid Date') {
+      return null
+    }
+
+    const now = new Date()
+    let hours = 0
+    let minutes = 0
+    let isPM = false
+
+    const match = trimmed.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?/i)
+    if (match) {
+      hours = parseInt(match[1], 10)
+      minutes = match[2] ? parseInt(match[2], 10) : 0
+      isPM = (match[3]?.toUpperCase() === 'PM')
+
+      if (isPM && hours < 12) hours += 12
+      if (!isPM && hours === 12) hours = 0
+    }
+
+    const tradeDate = new Date(now)
+    tradeDate.setHours(hours, minutes, 0, 0)
+
+    return tradeDate
+  }
+
+  function parseCSVContent(content: string): any[] {
+    const lines = content.split('\n').filter(line => line.trim() !== '')
+    if (lines.length <= 1) return []
+
+    const headers = parseCSVLine(lines[0])
+    const colMap = buildColumnMapping(headers)
+
+    if (colMap['ticker'] === undefined) {
+      console.error('[CSV Debug] Missing ticker/symbol column.')
+      return []
+    }
+
+    const trades: any[] = []
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = parseCSVLine(lines[i])
+      if (values.length < headers.length) continue
+
+      const ticker = values[colMap['ticker']]?.trim() || ''
+
+      let entryPrice: number | null = null
+      if (colMap['entry_price'] !== undefined) {
+        entryPrice = parseNumeric(values[colMap['entry_price']])
+      }
+
+      let exitPrice: number | null = null
+      if (colMap['exit_price'] !== undefined) {
+        exitPrice = parseNumeric(values[colMap['exit_price']])
+      }
+
+      let size: number | null = null
+      if (colMap['size'] !== undefined) {
+        size = parseNumeric(values[colMap['size']])
+      }
+
+      let entryTime: string | null = null
+      if (colMap['entry_time'] !== undefined) {
+        entryTime = values[colMap['entry_time']]?.trim() || null
+      }
+
+      let exitTime: string | null = null
+      if (colMap['exit_time'] !== undefined) {
+        exitTime = values[colMap['exit_time']]?.trim() || null
+      }
+
+      let realizedPl: number | null = null
+      if (colMap['realized_pl'] !== undefined) {
+        realizedPl = parseNumeric(values[colMap['realized_pl']])
+      }
+
+      let direction: string = 'long'
+      if (colMap['side'] !== undefined) {
+        const rawSide = values[colMap['side']]?.trim().toLowerCase() || ''
+        if (rawSide === 'short' || rawSide === 'sell') {
+          direction = 'short'
+        }
+      }
+
+      if (!ticker) continue
+
+      const trade: any = {
+        ticker,
+        direction,
+        entry_price: entryPrice?.toFixed(2) || null,
+        exit_price: exitPrice?.toFixed(2) || null,
+        size: size?.toString() || '0',
+        entry_time: entryTime,
+        exit_time: exitTime,
+        realized_pl: realizedPl?.toFixed(2) || null,
+        created_at: new Date().toISOString()
+      }
+
+      trades.push(trade)
+    }
+
+    return trades
+  }
+
+  function parseCSVLine(line: string): string[] {
+    const values: string[] = []
+    let currentValue = ''
+    let inQuotes = false
+    let i = 0
+
+    while (i < line.length) {
+      const char = line[i]
+      if (char === '"') {
+        inQuotes = !inQuotes
+        i++
+      } else if (char === ',' && !inQuotes) {
+        values.push(currentValue.trim())
+        currentValue = ''
+        i++
+      } else {
+        currentValue += char
+        i++
+      }
+    }
+    values.push(currentValue.trim())
+    return values.map(v => v.replace(/^"|"$/g, ''))
+  }
+
+  function buildColumnMapping(headers: string[]): Record<string, number> {
+    const mapping: Record<string, number> = {}
+    const headerAliases: Record<string, string> = {
+      ticker: 'ticker', symbol: 'ticker', security: 'ticker', instrument: 'ticker',
+      side: 'side', type: 'side', action: 'side', direction: 'side',
+      entry: 'entry_price', entry_price: 'entry_price', entryprice: 'entry_price',
+      exit: 'exit_price', exit_price: 'exit_price', exitprice: 'exit_price',
+      quantity: 'size', size: 'size', shares: 'size', qty: 'size', amount: 'size',
+      pnl: 'realized_pl', p_l: 'realized_pl', realized_pl: 'realized_pl', pl: 'realized_pl',
+      time: 'entry_time', entry_time: 'entry_time', entrytime: 'entry_time', timestamp: 'entry_time',
+      exit_time: 'exit_time', exittime: 'exit_time'
+    }
+
+    for (let i = 0; i < headers.length; i++) {
+      const normalized = headers[i].trim().toLowerCase().replace(/[^a-z0-9_ ]/g, '').replace(/\s+/g, '_')
+      const canonical = headerAliases[normalized]
+      if (canonical && mapping[canonical] === undefined) {
+        mapping[canonical] = i
+      }
+    }
+    return mapping
+  }
+
+  function parseNumeric(value: string | undefined): number | null {
+    if (!value || value.trim() === '') return null
+    const cleaned = value.trim().replace(/[$,]/g, '')
+    const num = Number(cleaned)
+    return isNaN(num) ? null : num
+  }
+
+  function checkRules(trade: any) {
+    const violations: string[] = []
+    if (!trade) return violations
+
+    // Sample rules - these should come from user's actual rules
+    const rules = {
+      maxFloat: 10_000_000,
+      minPrice: 2,
+      maxPrice: 10,
+      tradeBefore9AM: true,
+      allowedTickers: ["AAPL", "TSLA", "NVDA", "AMZN", "GOOGL", "MSFT", "META", "NFLX"]
+    }
+
+    if (trade.ticker && !rules.allowedTickers.includes(trade.ticker))
+      violations.push("Ticker not in watchlist")
+
+    if (trade.price !== undefined) {
+      const price = Number(trade.price)
+      if (price < rules.minPrice) violations.push(`Price below $${rules.minPrice}`)
+      if (price > rules.maxPrice) violations.push(`Price above $${rules.maxPrice}`)
+    }
+
+    return violations
+  }
+
+  return (
+    <div className="flex flex-col gap-6 h-full">
+      {/* Upload Section */}
+      <Card className="border-2 border-dashed border-card-border">
+        <div className="p-6 text-center">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 bg-accent-tint rounded-full flex items-center justify-center">
+              <UploadCloud className="w-6 h-6 text-accent" />
+            </div>
+            <h3 className="text-lg font-semibold text-text-primary">Upload Trade Data</h3>
+            <p className="text-text-muted text-sm">Drop CSV file or trade screenshot to analyze</p>
+
+            <div className="flex gap-4 mt-4">
+               <Input
+                 type="file"
+                 accept="image/*,.csv"
+                 onChange={async (e) => {
+                   console.log("[UPLOAD] file selected", e.target.files)
+                   const selectedFile = e.target.files?.[0] || null
+                   setFile(selectedFile)
+
+                   // Auto-trigger upload for CSV files (restore pre-redesign behavior)
+                   if (selectedFile && selectedFile.name.endsWith('.csv')) {
+                     console.log("[UPLOAD] Auto-triggering CSV upload")
+                     await handleUpload(selectedFile)
+                   }
+                 }}
+                 className="hidden"
+                 id="file-upload"
+               />
+              <label
+                htmlFor="file-upload"
+                className="px-4 py-2 bg-card-bg border border-card-border rounded-lg cursor-pointer hover:bg-neutral-fill transition-colors"
+              >
+                Choose File
+              </label>
+               <Button
+                onClick={() => handleUpload()}
+                disabled={loading || !file}
+                className="bg-accent hover:bg-accent/90 text-white"
+              >
+                {loading ? "Analyzing..." : "Analyze Trades"}
+              </Button>
+            </div>
+
+            {analysisPhase && (
+              <div className="mt-2 text-sm text-text-muted">
+                {analysisPhase}
+              </div>
+            )}
+            {analysisResult && (
+              <div className="mt-2 p-3 bg-profit-tint border border-profit-green rounded-lg text-profit-green text-sm">
+                {analysisResult.message}
+              </div>
+            )}
+            {showFailureMessage && (
+              <div className="mt-2 p-3 bg-loss-tint border border-loss-red rounded-lg text-loss-red text-sm">
+                {showFailureMessage}
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      {/* Trade Selector */}
+      {trades.length > 0 && (
+        <div className="flex gap-4 overflow-x-auto pb-2">
+          {trades.map((trade, idx) => {
+            const isSelected = selectedTradeIndex === idx
+            const isProfitable = trade.realized_pl && parseFloat(trade.realized_pl) > 0
+
+            return (
+              <button
+                key={trade.localId}
+                onClick={() => setSelectedTradeIndex(idx)}
+                className={`flex flex-col items-center gap-2 px-4 py-3 rounded-lg border transition-all ${isSelected ? 'border-accent bg-accent-tint' : 'border-card-border hover:border-accent'}`}
+              >
+                <div className={`text-sm font-medium ${isSelected ? 'text-accent' : 'text-text-primary'}`}>
+                  {trade.ticker}
+                </div>
+                <div className={`text-xs ${isProfitable ? 'text-profit-green' : 'text-loss-red'}`}>
+                  {formatPL(trade.realized_pl)}
+                </div>
+                <div className="w-2 h-2 rounded-full bg-text-muted" />
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Main Content Area */}
+      {selectedTrade && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
+          {/* Chart Area - 2/3 width */}
+          <div className="lg:col-span-2 flex flex-col gap-4">
+            {/* Chart Card */}
+            <Card className="flex-1">
+              <div className="p-4">
+                <h3 className="text-base font-semibold text-text-primary mb-2">
+                  {selectedTrade.ticker} - Historical Price Action
+                </h3>
+
+                {chartLoading ? (
+                  <div className="flex items-center justify-center h-96">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                      <div className="text-text-muted">Loading chart data...</div>
+                    </div>
+                  </div>
+                ) : candles.length > 0 ? (
+                  <div className="h-96">
+                    <TradeChart
+                      candles={candles}
+                      ticker={selectedTrade.ticker}
+                      width={undefined}
+                      height={undefined}
+                      entryPrice={selectedTrade.entry_price ? parseFloat(selectedTrade.entry_price) : undefined}
+                      exitPrice={selectedTrade.exit_price ? parseFloat(selectedTrade.exit_price) : undefined}
+                      entryTime={selectedTrade.entry_time || undefined}
+                      exitTime={selectedTrade.exit_time || undefined}
+                      tradeMetrics={selectedTrade.tradeMetrics ?? undefined}
+                      direction={selectedTrade.direction}
+                      size={selectedTrade.size ?? undefined}
+                    />
+                  </div>
+                ) : chartError ? (
+                  <div className="flex flex-col items-center justify-center h-96 text-text-muted">
+                    <FileText className="w-12 h-12 mb-2" />
+                    <p className="text-sm">{chartError}</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-96 text-text-muted">
+                    <FileText className="w-12 h-12 mb-2" />
+                    <p className="text-sm">No chart data available</p>
+                  </div>
+                )}
+              </div>
+            </Card>
+
+            {/* Market Context - inline metadata */}
+            <div className="text-xs text-text-muted">
+              <span>Market Context: </span>
+              {selectedTrade.rawData?.sector && <span className="mr-2">• Sector: {selectedTrade.rawData.sector}</span>}
+              {selectedTrade.rawData?.volume && <span className="mr-2">• Volume: {formatNumber(selectedTrade.rawData.volume)}</span>}
+            </div>
+          </div>
+
+          {/* Right Rail - 1/3 width */}
+          <div className="lg:col-span-1 flex flex-col gap-4">
+            {/* Trade Metrics */}
+            <TradeMetricsCard
+              trade={selectedTrade}
+              tradeMetrics={selectedTrade.tradeMetrics}
+            />
+
+            {/* AI Review */}
+            <AIReviewCard
+              aiReview={coachingResponse}
+              isLoading={aiReviewLoading}
+            />
+
+            {/* Behavioral Flags */}
+            <BehavioralFlagsCard
+              behaviorTags={selectedTrade.behaviorTags}
+            />
+
+            {/* Rule Compliance */}
+            <RuleComplianceCard
+              violations={selectedTrade.violations}
+              disciplineScore={selectedTrade.discipline_score}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

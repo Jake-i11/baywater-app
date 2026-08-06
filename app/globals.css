@@ -49,38 +49,57 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.9 0.05 130);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.7 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.7 0 0);
-  --primary: oklch(0.7 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.7 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.7 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.7 0 0);
-  --sidebar-primary: oklch(0.7 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.7 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Global Design System - Baywater Redesign */
+  --canvas: #F7F8FB;
+  --card-bg: #FFFFFF;
+  --card-border: #E9EBF1;
+  --card-radius: 12px;
+  --card-shadow: 0 1px 2px rgba(16,24,40,0.04);
+
+  --accent: #3B6EF6;
+  --accent-tint: #EEF3FF;
+
+  --profit-green: #1DA97F;
+  --profit-tint: #EAFBF3;
+  --loss-red: #E5484D;
+  --loss-tint: #FDECEC;
+
+  --neutral-fill: #F1F2F5;
+  --text-primary: #0A2A1A;
+  --text-secondary: #6B7280;
+  --text-muted: #9AA1B2;
+
+  --tag-neutral-bg: #EEF1F6;
+  --tag-neutral-text: #475569;
+
+  /* Legacy variables for compatibility */
+  --background: var(--canvas);
+  --foreground: var(--text-primary);
+  --card: var(--card-bg);
+  --card-foreground: var(--text-primary);
+  --popover: var(--card-bg);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--accent);
+  --primary-foreground: var(--card-bg);
+  --secondary: var(--neutral-fill);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--neutral-fill);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--accent);
+  --accent-foreground: var(--text-primary);
+  --destructive: var(--loss-red);
+  --border: var(--card-border);
+  --input: var(--card-bg);
+  --ring: var(--accent);
+  --radius: 12px;
+  --sidebar: var(--card-bg);
+  --sidebar-foreground: var(--text-primary);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: var(--card-bg);
+  --sidebar-accent: var(--accent-tint);
+  --sidebar-accent-foreground: var(--accent);
+  --sidebar-border: var(--card-border);
+  --sidebar-ring: var(--accent);
 }
 
 .dark {
