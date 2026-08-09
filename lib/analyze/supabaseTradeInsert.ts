@@ -101,11 +101,30 @@ export async function fetchAndSaveChartData(trade: TradeData, tradeIndex: number
       }),
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error(`[CHART] Failed to fetch chart for ${trade.ticker}:`, errorData);
-      return;
+   if (!response.ok) {
+  const contentType = response.headers.get("content-type");
+  const rawBody = await response.text();
+
+  let errorData: unknown = rawBody;
+
+  if (contentType?.includes("application/json")) {
+    try {
+      errorData = JSON.parse(rawBody);
+    } catch {
+      errorData = rawBody;
     }
+  }
+
+  console.error(`[CHART] Failed to fetch chart for ${trade.ticker}:`, {
+    status: response.status,
+    statusText: response.statusText,
+    url: response.url,
+    contentType,
+    body: errorData,
+  });
+
+  return;
+}
 
     const chartData = await response.json();
     const candlesCount = chartData.candles?.length || 0;
@@ -154,10 +173,28 @@ export async function triggerAIReviewGeneration(trade: TradeData) {
       }),
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error(`[AI] Failed to generate AI review for trade ${trade.id}:`, errorData);
-    } else {
+   if (!response.ok) {
+  const contentType = response.headers.get("content-type");
+  const rawBody = await response.text();
+
+  let errorData: unknown = rawBody;
+
+  if (contentType?.includes("application/json")) {
+    try {
+      errorData = JSON.parse(rawBody);
+    } catch {
+      errorData = rawBody;
+    }
+  }
+
+  console.error(`[AI] Failed to generate AI review for trade ${trade.id}:`, {
+    status: response.status,
+    statusText: response.statusText,
+    url: response.url,
+    contentType,
+    body: errorData,
+  });
+} else {
       console.log(`[AI] Review generation completed for trade: ${trade.id}`);
     }
 
