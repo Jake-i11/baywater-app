@@ -58,6 +58,8 @@ interface TradeChartProps {
   tradeMetrics?: TradeMetricsResult;
   direction?: string;
   size?: string;
+  /** Alpaca bars timeframe (e.g. "5Min", "1Hour"); used to place entry/exit markers on the right candle. */
+  timeframe?: string;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -68,19 +70,61 @@ function toUTC(timeStr: string): UTCTimestamp {
 }
 
 /**
- * Find the candle index whose time is within `toleranceMs` of the target.
+ * Duration of an Alpaca bars timeframe in milliseconds.
+ * Falls back to 5 minutes for unknown formats.
+ */
+function getTimeframeMs(timeframe: string): number {
+  const minMatch = /^(\d+)Min$/.exec(timeframe);
+  if (minMatch) return parseInt(minMatch[1], 10) * 60_000;
+  const hourMatch = /^(\d+)Hour$/.exec(timeframe);
+  if (hourMatch) return parseInt(hourMatch[1], 10) * 3_600_000;
+  return 5 * 60_000;
+}
+
+/**
+ * Find the candle index that corresponds to a trade timestamp.
+ *
+ * Preferred match: the candle that was in progress at the target time (the
+ * last candle that starts at or before the target). This keeps entry/exit
+ * markers on the correct candle regardless of the selected timeframe instead
+ * of rounding the trade timestamp to the nearest candle boundary.
+ *
+ * Falls back to the nearest candle within `maxGapMs` for targets just outside
+ * the fetched window (e.g. entry shortly before the first available candle).
  */
 function findCandleByTime(
   candles: CandleData[],
   targetTimeStr: string,
-  toleranceMs = 300_000
+  maxGapMs: number
 ): number {
   const targetMs = new Date(targetTimeStr).getTime();
   if (isNaN(targetMs)) return -1;
-  return candles.findIndex((c) => {
-    const cMs = new Date(c.time).getTime();
-    return Math.abs(cMs - targetMs) < toleranceMs;
-  });
+
+  let containingIdx = -1;
+  for (let i = 0; i < candles.length; i++) {
+    const cMs = new Date(candles[i].time).getTime();
+    if (cMs <= targetMs) {
+      containingIdx = i;
+    } else {
+      break;
+    }
+  }
+  if (containingIdx >= 0) {
+    const gapMs = targetMs - new Date(candles[containingIdx].time).getTime();
+    if (gapMs <= maxGapMs) return containingIdx;
+  }
+
+  // Nearest candle within tolerance (entry before first candle / after last candle)
+  let bestIdx = -1;
+  let bestDist = Infinity;
+  for (let i = 0; i < candles.length; i++) {
+    const dist = Math.abs(new Date(candles[i].time).getTime() - targetMs);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestIdx = i;
+    }
+  }
+  return bestDist <= maxGapMs ? bestIdx : -1;
 }
 
 /** Format a time string for display in a chart marker label. */
@@ -166,6 +210,7 @@ export function TradeChart({
   tradeMetrics,
   direction,
   size,
+  timeframe = "5Min",
 }: TradeChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -218,12 +263,16 @@ export function TradeChart({
     let entryIdx = -1;
     let exitIdx = -1;
 
+    // Marker tolerance grows with the candle interval so entry/exit markers
+    // stay aligned to the actual trade timestamps on every timeframe.
+    const maxGapMs = Math.max(300_000, getTimeframeMs(timeframe));
+
     if (entryTime) {
-      entryIdx = findCandleByTime(candles, entryTime);
+      entryIdx = findCandleByTime(candles, entryTime, maxGapMs);
       if (entryIdx === -1) entryIdx = Math.floor(candles.length / 3);
     }
     if (exitTime) {
-      exitIdx = findCandleByTime(candles, exitTime);
+      exitIdx = findCandleByTime(candles, exitTime, maxGapMs);
       if (exitIdx === -1) exitIdx = Math.floor((candles.length * 2) / 3);
     }
 
@@ -552,6 +601,7 @@ export function TradeChart({
     tradeMetrics,
     direction,
     size,
+    timeframe,
   ]);
 
   if (candles.length === 0) {

@@ -296,20 +296,27 @@ export async function saveTradesToSupabase(trades: TradeData[], userId: string, 
 
      setTrades(updatedTrades)
 
-     // [PIPELINE] Post-insert processing: Fetch chart data and generate AI reviews
+     // [PIPELINE] Post-insert processing: Fetch chart data and generate AI reviews.
+     // This is best-effort — a chart/Alpaca/AI failure must never make the trade
+     // save look like it failed, since the insert already succeeded above.
      console.log("[PIPELINE] Starting post-insert processing for", data.length, "trades");
 
-     // Process trades sequentially to avoid overwhelming APIs
-     for (let i = 0; i < data.length; i++) {
-       const tradeWithId = updatedTrades[i];
+     try {
+       // Process trades sequentially to avoid overwhelming APIs
+       for (let i = 0; i < data.length; i++) {
+         const tradeWithId = updatedTrades[i];
 
-       if (tradeWithId?.id) {
-         // Fetch chart data for this trade
-         await fetchAndSaveChartData(tradeWithId, i, data.length);
+         if (tradeWithId?.id) {
+           // Fetch chart data for this trade
+           await fetchAndSaveChartData(tradeWithId, i, data.length);
 
-         // Trigger AI review generation
-         await triggerAIReviewGeneration(tradeWithId);
+           // Trigger AI review generation
+           await triggerAIReviewGeneration(tradeWithId);
+         }
        }
+     } catch (postInsertError) {
+       // Trades are already saved — chart/AI failures are logged, not fatal
+       console.error("[PIPELINE] Post-insert processing failed (trades are still saved):", postInsertError);
      }
 
      console.log("[PIPELINE] Post-insert processing completed");
@@ -318,7 +325,8 @@ export async function saveTradesToSupabase(trades: TradeData[], userId: string, 
    return data
  } catch (error) {
    console.error('[DB INSERT] Failed to save trades:', error)
-   setShowFailureMessage("Failed to save trades to database. Please check console for details.")
+   const message = error instanceof Error ? error.message : String(error);
+   setShowFailureMessage(`Failed to save trade: ${message}`)
    throw error
  }
 }

@@ -72,6 +72,18 @@
   --tag-neutral-bg: #EEF1F6;
   --tag-neutral-text: #475569;
 
+  /* New Enterprise Color Scheme */
+  --main-bg: #f4f6f9;
+  --card-bg-new: #ffffff;
+  --card-shadow-new: 0 1px 3px rgba(0,0,0,0.08);
+  --text-primary-new: #1a3d2e;
+  --text-secondary-new: #5a6b6a;
+  --accent-green: #1a3d2e;
+  --border-soft: #e8ecea;
+  --light-green-bg: #e6f0ea;
+  --warning-muted: #f5d5d0;
+  --warning-text: #a85a4d;
+
   /* Legacy variables for compatibility */
   --background: var(--canvas);
   --foreground: var(--text-primary);

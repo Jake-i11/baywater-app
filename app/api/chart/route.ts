@@ -1,12 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// Explicit allowlist of supported chart timeframes (Alpaca bars API format).
+// UI values like "1m" are mapped to these client-side; only these values may
+// ever be passed through to Alpaca. Anything else is rejected.
+const SUPPORTED_TIMEFRAMES = new Set(["1Min", "5Min", "15Min", "30Min", "1Hour"]);
+const DEFAULT_TIMEFRAME = "5Min";
+
+// Alpaca returns up to 10,000 bars per response. Long replay windows at 1Min
+// granularity can exceed a single page, so follow next_page_token instead of
+// silently truncating. The cap is a safety valve, not expected to be hit.
+const MAX_BARS_PAGES = 50;
+
 export async function POST(request: NextRequest) {
   try {
-    const { ticker, startTime, endTime } = await request.json();
+    const { ticker, startTime, endTime, timeframe } = await request.json();
 
     if (!ticker || !startTime || !endTime) {
       return NextResponse.json(
         { error: "Missing required parameters: ticker, startTime, endTime" },
+        { status: 400 }
+      );
+    }
+
+    const tf = timeframe ?? DEFAULT_TIMEFRAME;
+    if (typeof tf !== "string" || !SUPPORTED_TIMEFRAMES.has(tf)) {
+      return NextResponse.json(
+        {
+          error: `Unsupported timeframe: ${String(timeframe)}. Supported timeframes: ${[...SUPPORTED_TIMEFRAMES].join(", ")}`,
+        },
         { status: 400 }
       );
     }
@@ -26,46 +47,68 @@ export async function POST(request: NextRequest) {
     const startISO = new Date(startTime).toISOString();
     const endISO = new Date(endTime).toISOString();
 
-    // Build Alpaca bars URL with IEX feed (SIP feed requires higher-tier subscription)
-    const alpacaUrl = `https://data.alpaca.markets/v2/stocks/${ticker}/bars?timeframe=5Min&start=${startISO}&end=${endISO}&limit=1000&feed=iex`;
+    // Fetch bars from Alpaca with IEX feed (SIP feed requires higher-tier
+    // subscription). Paginate through next_page_token so we never silently
+    // assume a single response contains the complete dataset.
+    let bars: any[] = [];
+    let pageToken: string | undefined;
+    let pagesFetched = 0;
 
-    // Log URL without sensitive query params (keys are in headers, not URL)
-    console.log("[Chart API] Alpaca request URL:", alpacaUrl);
+    do {
+      const alpacaUrl =
+        `https://data.alpaca.markets/v2/stocks/${ticker}/bars` +
+        `?timeframe=${tf}&start=${startISO}&end=${endISO}&limit=10000&feed=iex` +
+        (pageToken ? `&page_token=${pageToken}` : "");
 
-    // Fetch 5-minute bars from Alpaca
-    const response = await fetch(alpacaUrl, {
-      method: "GET",
-      headers: {
-        "APCA-API-KEY-ID": ALPACA_API_KEY,
-        "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY,
-      },
-    });
+      // Log URL without sensitive query params (keys are in headers, not URL)
+      console.log("[Chart API] Alpaca request URL:", alpacaUrl);
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      return NextResponse.json(
-        {
-          error: `Alpaca API error: ${response.status} ${response.statusText}`,
-          details: errorData,
+      const response = await fetch(alpacaUrl, {
+        method: "GET",
+        headers: {
+          "APCA-API-KEY-ID": ALPACA_API_KEY,
+          "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY,
         },
-        { status: response.status }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        return NextResponse.json(
+          {
+            error: `Alpaca API error: ${response.status} ${response.statusText}`,
+            details: errorData,
+          },
+          { status: response.status }
+        );
+      }
+
+      const data = await response.json();
+      if (data.bars) {
+        bars.push(...data.bars);
+      }
+      pageToken = data.next_page_token ?? undefined;
+      pagesFetched++;
+    } while (pageToken && pagesFetched < MAX_BARS_PAGES);
+
+    if (pageToken) {
+      console.warn(
+        `[Chart API] Alpaca data truncated for ${ticker} at ${tf} after ${MAX_BARS_PAGES} pages`
       );
     }
 
-    const data = await response.json();
-
     // Transform Alpaca data to a format suitable for TradingView Lightweight Charts
-    const candles = data.bars?.map((bar: any) => ({
+    const candles = bars.map((bar: any) => ({
       time: bar.t,
       open: bar.o,
       high: bar.h,
       low: bar.l,
       close: bar.c,
       volume: bar.v,
-    })) || [];
+    }));
 
     return NextResponse.json({
       ticker,
+      timeframe: tf,
       candles,
       startTime: startISO,
       endTime: endISO,

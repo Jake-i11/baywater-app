@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { supabase } from "@/lib/supabase"
-import { Play, Pause, SkipBack, SkipForward, Volume2, Maximize, Minimize, X, BarChart3 } from "lucide-react"
+import { Play, Pause, SkipBack, SkipForward, Volume2, Maximize, Minimize, X, BarChart3, Loader2 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { TradeChart } from "@/components/TradeChart"
 import { formatPL } from "@/lib/utils"
@@ -20,10 +20,28 @@ interface Trade {
   side: string
   size: string
   discipline_score: number | null
-  violations: string[]
-  behaviorTags: string[]
+  violations?: string[]
+  behaviorTags?: string[]
   created_at: string
 }
+
+function normalizeTrade(trade: Trade): Trade {
+  return {
+    ...trade,
+    behaviorTags: Array.isArray(trade.behaviorTags) ? trade.behaviorTags : [],
+    violations: Array.isArray(trade.violations) ? trade.violations : [],
+  }
+}
+
+// Chart timeframe options. `value` is the Alpaca bars API timeframe; `label` is
+// what the user sees. These are the ONLY timeframes we ever send to /api/chart.
+const TIMEFRAMES = [
+  { label: "1m", value: "1Min" },
+  { label: "5m", value: "5Min" },
+  { label: "15m", value: "15Min" },
+  { label: "30m", value: "30Min" },
+  { label: "1h", value: "1Hour" },
+] as const
 
 export default function ReplayPage() {
   const [trades, setTrades] = useState<Trade[]>([])
@@ -36,6 +54,17 @@ export default function ReplayPage() {
   const [totalDuration, setTotalDuration] = useState(60)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showMetrics, setShowMetrics] = useState(false)
+  const [timeframe, setTimeframe] = useState("5Min")
+  const [chartLoading, setChartLoading] = useState(false)
+  const [chartError, setChartError] = useState<string | null>(null)
+
+  // Guards against stale responses when the user switches timeframes (or trades)
+  // rapidly: only the most recent request may update the chart.
+  const chartRequestId = useRef(0)
+  const chartAbortController = useRef<AbortController | null>(null)
+  // In-memory cache keyed by ticker + start + end + timeframe so switching back
+  // to a previously viewed timeframe is instant and needs no extra API call.
+  const chartCache = useRef<Map<string, any[]>>(new Map())
 
   useEffect(() => {
     fetchTrades()
@@ -66,15 +95,17 @@ export default function ReplayPage() {
       }
 
       if (tradesData && tradesData.length > 0) {
-        setTrades(tradesData)
+        // Older trades may not yet have these fields populated.
+        const normalizedTrades = tradesData.map(normalizeTrade)
+        setTrades(normalizedTrades)
 
         // Select the first trade by default
-        const firstTrade = tradesData[0]
+        const firstTrade = normalizedTrades[0]
         setSelectedTrade(firstTrade)
 
         // Fetch chart data for the first trade
         if (firstTrade.entry_time) {
-          await fetchChartData(firstTrade.ticker, firstTrade.entry_time, firstTrade.exit_time || null)
+          await fetchChartData(firstTrade.ticker, firstTrade.entry_time, firstTrade.exit_time || null, timeframe)
         }
       }
     } catch (error) {
@@ -84,26 +115,87 @@ export default function ReplayPage() {
     }
   }
 
-  async function fetchChartData(ticker: string, entryTime: string, exitTime: string | null) {
+  async function fetchChartData(ticker: string, entryTime: string, exitTime: string | null, tf: string = "5Min") {
+    // The chart window is derived from the trade's actual entry/exit timestamps
+    // so switching timeframe never changes the replayed period.
+    const startISO = new Date(entryTime).toISOString()
+    const endISO = exitTime
+      ? new Date(exitTime).toISOString()
+      : new Date(new Date(entryTime).getTime() + 2 * 60 * 60 * 1000).toISOString()
+
+    const cacheKey = `${ticker}|${startISO}|${endISO}|${tf}`
+    const cached = chartCache.current.get(cacheKey)
+    if (cached) {
+      // Cache hit is authoritative: invalidate any in-flight request so a
+      // slower older response can never overwrite these cached candles.
+      const requestId = ++chartRequestId.current
+      chartAbortController.current?.abort()
+      setCandles(cached)
+      setChartError(null)
+      setChartLoading(false)
+      return
+    }
+
+    const requestId = ++chartRequestId.current
+    chartAbortController.current?.abort()
+    const controller = new AbortController()
+    chartAbortController.current = controller
+
+    setChartLoading(true)
+    setChartError(null)
+
     try {
       const response = await fetch("/api/chart", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           ticker,
-          startTime: new Date(entryTime).toISOString(),
-          endTime: exitTime ? new Date(exitTime).toISOString() : new Date(new Date(entryTime).getTime() + 2 * 60 * 60 * 1000).toISOString(),
+          startTime: startISO,
+          endTime: endISO,
+          timeframe: tf,
         }),
       })
 
+      // A newer timeframe/trade request superseded this one — discard it.
+      if (requestId !== chartRequestId.current) return
+
       if (response.ok) {
         const chartData = await response.json()
-        if (chartData.candles) {
-          setCandles(chartData.candles)
+        if (requestId !== chartRequestId.current) return
+
+        const newCandles = chartData.candles || []
+        if (newCandles.length > 0) {
+          chartCache.current.set(cacheKey, newCandles)
+          setCandles(newCandles)
+          setChartError(null)
+        } else {
+          // No candles is NOT "trade does not exist" — keep the trade loaded and
+          // let the user try another timeframe.
+          console.warn(`Chart API returned 0 candles for ${ticker} at ${tf}`)
+          setCandles([])
+          setChartError(`No market data available for ${ticker} on the ${tf} timeframe`)
         }
+      } else {
+        let errorMsg = response.statusText
+        try {
+          const errBody = await response.json()
+          if (errBody.error) errorMsg = errBody.error
+        } catch {}
+        console.error("Failed to fetch chart data:", errorMsg)
+        setCandles([])
+        setChartError(`Chart fetch failed: ${errorMsg}`)
       }
     } catch (error) {
+      // Aborted because a newer request started, or a real failure.
+      if (requestId !== chartRequestId.current) return
       console.error("Error fetching chart data:", error)
+      setCandles([])
+      setChartError(`Error fetching chart data: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      if (requestId === chartRequestId.current) {
+        setChartLoading(false)
+      }
     }
   }
 
@@ -113,7 +205,17 @@ export default function ReplayPage() {
     setCurrentTime(0)
 
     if (trade.entry_time) {
-      fetchChartData(trade.ticker, trade.entry_time, trade.exit_time || null)
+      fetchChartData(trade.ticker, trade.entry_time, trade.exit_time || null, timeframe)
+    }
+  }
+
+  function handleTimeframeSelect(tf: string) {
+    if (tf === timeframe) return
+    // Update the selected button immediately, then fetch that timeframe's
+    // candles for the SAME trade / SAME window / SAME replay position.
+    setTimeframe(tf)
+    if (selectedTrade?.entry_time) {
+      fetchChartData(selectedTrade.ticker, selectedTrade.entry_time, selectedTrade.exit_time || null, tf)
     }
   }
 
@@ -204,6 +306,30 @@ export default function ReplayPage() {
               </div>
             )}
 
+            {/* Timeframe selector */}
+            <div className="absolute top-4 right-4 z-10 flex items-center gap-1 bg-card-bg/80 backdrop-blur-sm px-1.5 py-1 rounded-lg border border-card-border shadow-sm">
+              {TIMEFRAMES.map((tf) => (
+                <button
+                  key={tf.value}
+                  onClick={() => handleTimeframeSelect(tf.value)}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                    timeframe === tf.value
+                      ? "bg-accent text-white shadow-sm"
+                      : "text-text-muted hover:text-text-primary hover:bg-accent-tint"
+                  }`}
+                >
+                  {tf.label}
+                </button>
+              ))}
+              {chartLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-text-muted ml-1" />}
+            </div>
+
+            {chartError && (
+              <div className="absolute top-16 right-4 z-10 bg-loss-tint text-loss-red text-xs font-medium px-3 py-1.5 rounded-lg border border-loss-red/20">
+                {chartError}
+              </div>
+            )}
+
             <div className="h-full w-full">
               {candles.length > 0 ? (
                 <TradeChart
@@ -217,6 +343,7 @@ export default function ReplayPage() {
                   exitTime={selectedTrade?.exit_time || undefined}
                   direction={selectedTrade?.side === 'SHORT' ? 'short' : 'long'}
                   size={selectedTrade?.size}
+                  timeframe={timeframe}
                 />
               ) : (
                 <div className="flex items-center justify-center h-full">
@@ -224,7 +351,10 @@ export default function ReplayPage() {
                     <div className="w-12 h-12 bg-neutral-fill rounded-full flex items-center justify-center mx-auto mb-2">
                       <BarChart3 className="w-6 h-6" />
                     </div>
-                    <p>No chart data available for this trade</p>
+                    <p>{chartError ?? 'No chart data available for this trade'}</p>
+                    {chartError && (
+                      <p className="text-xs mt-1">The trade is still loaded — try a different timeframe</p>
+                    )}
                   </div>
                 </div>
               )}
@@ -368,9 +498,9 @@ export default function ReplayPage() {
               <CardTitle className="text-sm font-medium uppercase tracking-wider text-text-muted">Behavioral Flags</CardTitle>
             </CardHeader>
             <CardContent>
-              {selectedTrade.behaviorTags.length > 0 ? (
+              {(selectedTrade.behaviorTags ?? []).length > 0 ? (
                 <div className="flex flex-wrap gap-2">
-                  {selectedTrade.behaviorTags.map((tag) => (
+                  {(selectedTrade.behaviorTags ?? []).map((tag) => (
                     <span key={tag} className="px-3 py-1 rounded-full text-sm font-medium bg-tag-neutral-bg text-tag-neutral-text">
                       {tag}
                     </span>
@@ -390,9 +520,9 @@ export default function ReplayPage() {
               <CardTitle className="text-sm font-medium uppercase tracking-wider text-text-muted">Rule Compliance</CardTitle>
             </CardHeader>
             <CardContent>
-              {selectedTrade.violations.length > 0 ? (
+              {(selectedTrade.violations ?? []).length > 0 ? (
                 <div className="space-y-2">
-                  {selectedTrade.violations.map((violation, index) => (
+                  {(selectedTrade.violations ?? []).map((violation, index) => (
                     <div key={index} className="flex items-start gap-2 text-sm text-loss-red">
                       <span className="mt-1">•</span>
                       <span>{violation}</span>

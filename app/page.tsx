@@ -26,12 +26,12 @@ export default function Home() {
     <div
       className="relative min-h-screen overflow-hidden text-white"
       style={{
-        // Dark green gradient (deep forest to almost black)
-        background: 'linear-gradient(135deg, #0a1a0f 0%, #07120a 40%, #0c1f14 100%)',
+        // Neutral gray gradient
+        background: 'linear-gradient(135deg, #374151 0%, #1f2937 40%, #4b5563 100%)',
         backgroundImage: `
           linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
           linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-          linear-gradient(135deg, #0a1a0f 0%, #07120a 40%, #0c1f14 100%)
+          linear-gradient(135deg, #374151 0%, #1f2937 40%, #4b5563 100%)
         `,
         backgroundSize: '40px 40px, 40px 40px, 100% 100%',
       }}

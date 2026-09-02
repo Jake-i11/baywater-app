@@ -14,8 +14,8 @@ function calculateConsistencyScore(trades: Trade[]): number {
   const disciplineScores = trades.map(t => t.discipline_score || 0)
   const avgDiscipline = disciplineScores.reduce((sum, score) => sum + score, 0) / disciplineScores.length
 
-  // Count violations
-  const totalViolations = trades.reduce((sum, trade) => sum + (trade.violations?.length || 0), 0)
+  // Count violations (the DB stores violations as a JSON string, so parse it)
+  const totalViolations = trades.reduce((sum, trade) => sum + getTradeViolations(trade).length, 0)
   const avgViolations = totalViolations / trades.length
 
   // Calculate consistency score (0-100)
@@ -107,16 +107,40 @@ interface ProfileData {
   username: string
   email: string
   created_at: string
-  profile_score: number
+  profile_score: number | null
   total_trades: number
   winning_trades: number
   losing_trades: number
-  total_pl: number
-  win_rate: number
-  profit_factor: number
-  discipline_score: number
-  consistency_score: number
-  execution_score: number
+  total_pl: number | null
+  win_rate: number | null
+  profit_factor: number | null
+  discipline_score: number | null
+  consistency_score: number | null
+  execution_score: number | null
+}
+
+// ── Real-data helpers (no fabricated values) ───────────────────────────────
+
+/** Parse a trade's violations column. The DB stores it as a JSON string. */
+function getTradeViolations(trade: Trade): string[] {
+  const v = trade.violations
+  if (Array.isArray(v)) return v
+  if (typeof v === 'string' && v) {
+    try {
+      const parsed = JSON.parse(v)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+/** Numeric P&L, or null when the trade has no usable value. */
+function getTradePL(trade: Trade): number | null {
+  if (trade.realized_pl === null || trade.realized_pl === undefined) return null
+  const pl = parseFloat(trade.realized_pl)
+  return isNaN(pl) ? null : pl
 }
 
 export default function ProfilePage() {
@@ -169,30 +193,27 @@ console.error("Profile fetch error JSON:", JSON.stringify(profileError, null, 2)
       }
 
       if (profileData && tradesData) {
+        const hasTrades = tradesData.length > 0
+
         // Calculate additional statistics
-        const winningTrades = tradesData.filter(t => t.realized_pl && parseFloat(t.realized_pl) > 0)
-        const losingTrades = tradesData.filter(t => t.realized_pl && parseFloat(t.realized_pl) < 0)
+        const winningTrades = tradesData.filter(t => { const pl = getTradePL(t); return pl !== null && pl > 0 })
+        const losingTrades = tradesData.filter(t => { const pl = getTradePL(t); return pl !== null && pl < 0 })
 
-        const totalPL = tradesData.reduce((sum, trade) =>
-          sum + (trade.realized_pl ? parseFloat(trade.realized_pl) : 0), 0
-        )
+        const totalPL = tradesData.reduce((sum, trade) => sum + (getTradePL(trade) || 0), 0)
 
-        const winRate = tradesData.length > 0 ? (winningTrades.length / tradesData.length) * 100 : 0
+        // null (not 0) when there are no trades — the UI renders N/A for null
+        // and a real 0% only when trades exist and every one of them lost.
+        const winRate = hasTrades ? (winningTrades.length / tradesData.length) * 100 : null
 
-        const grossWins = winningTrades.reduce((sum, trade) =>
-          sum + (trade.realized_pl ? Math.abs(parseFloat(trade.realized_pl)) : 0), 0
-        )
+        const grossWins = winningTrades.reduce((sum, trade) => sum + Math.abs(getTradePL(trade) || 0), 0)
+        const grossLosses = losingTrades.reduce((sum, trade) => sum + Math.abs(getTradePL(trade) || 0), 0)
 
-        const grossLosses = losingTrades.reduce((sum, trade) =>
-          sum + (trade.realized_pl ? Math.abs(parseFloat(trade.realized_pl)) : 0), 0
-        )
-
-        const profitFactor = grossLosses > 0 ? grossWins / grossLosses : grossWins > 0 ? Infinity : 0
+        const profitFactor = !hasTrades ? null : grossLosses > 0 ? grossWins / grossLosses : grossWins > 0 ? Infinity : null
 
         // Calculate discipline score (average of all trade discipline scores)
-        const avgDisciplineScore = tradesData.length > 0
+        const avgDisciplineScore = hasTrades
           ? tradesData.reduce((sum, trade) => sum + (trade.discipline_score || 0), 0) / tradesData.length
-          : 0
+          : null
 
         // Calculate consistency score based on real trade data
         const consistencyScore = calculateConsistencyScore(tradesData)
@@ -200,17 +221,24 @@ console.error("Profile fetch error JSON:", JSON.stringify(profileError, null, 2)
         // Calculate execution score based on real trade data
         const executionScore = calculateExecutionScore(tradesData)
 
+        // Real profile score = average of the real sub-scores. null when there
+        // are no trades, so the circle renders empty instead of a placeholder.
+        const profileScore = hasTrades
+          ? Math.round(((avgDisciplineScore || 0) + (consistencyScore || 0) + (executionScore || 0)) / 3)
+          : null
+
         setProfile({
           ...profileData,
+          profile_score: profileScore,
           total_trades: tradesData.length,
           winning_trades: winningTrades.length,
           losing_trades: losingTrades.length,
-          total_pl: totalPL,
+          total_pl: hasTrades ? totalPL : null,
           win_rate: winRate,
           profit_factor: profitFactor,
           discipline_score: avgDisciplineScore,
-          consistency_score: tradesData.length > 0 ? consistencyScore : null,
-          execution_score: tradesData.length > 0 ? executionScore : null
+          consistency_score: hasTrades ? consistencyScore : null,
+          execution_score: hasTrades ? executionScore : null
         })
 
         setTrades(tradesData)
@@ -337,7 +365,7 @@ console.error("Profile fetch error JSON:", JSON.stringify(profileError, null, 2)
 
               <div className="flex items-center gap-4 text-sm text-text-muted">
                 <span>Member since {profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : "N/A"}</span>
-                <span>{profile?.email || "email@example.com"}</span>
+                <span>{profile?.email || "N/A"}</span>
               </div>
             </div>
 
@@ -382,12 +410,14 @@ console.error("Profile fetch error JSON:", JSON.stringify(profileError, null, 2)
                     stroke="#3B6EF6"
                     strokeWidth="8"
                     strokeDasharray="251.2"
-                    strokeDashoffset="50.24"
+                    strokeDashoffset={profile?.profile_score != null ? 251.2 * (1 - profile.profile_score / 100) : 251.2}
                     strokeLinecap="round"
                   />
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-3xl font-bold text-text-primary">{Math.round(profile?.profile_score || 0)}</div>
+                  <div className="text-3xl font-bold text-text-primary">
+                    {profile?.profile_score != null ? Math.round(profile.profile_score) : "N/A"}
+                  </div>
                 </div>
               </div>
             </div>
@@ -395,7 +425,7 @@ console.error("Profile fetch error JSON:", JSON.stringify(profileError, null, 2)
             <div className="flex items-center justify-between text-sm mb-4">
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-profit-green" />
-                <span>Discipline: {profile?.discipline_score ? Math.round(profile.discipline_score) : 0}</span>
+                <span>Discipline: {profile?.discipline_score != null ? Math.round(profile.discipline_score) : "N/A"}</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-accent" />
@@ -408,7 +438,7 @@ console.error("Profile fetch error JSON:", JSON.stringify(profileError, null, 2)
             </div>
 
             <div className="mt-4 h-2 bg-neutral-fill rounded-full overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-loss-red via-yellow-500 to-profit-green" style={{ width: `${profile?.profile_score || 0}%` }} />
+              <div className="h-full bg-gradient-to-r from-loss-red via-yellow-500 to-profit-green" style={{ width: `${profile?.profile_score != null ? profile.profile_score : 0}%` }} />
             </div>
           </CardContent>
         </Card>
@@ -431,14 +461,14 @@ console.error("Profile fetch error JSON:", JSON.stringify(profileError, null, 2)
                 <div>
                   <div className="text-xs text-text-muted uppercase tracking-wider">Win Rate</div>
                   <div className="text-2xl font-bold text-text-primary">
-                    {profile?.win_rate?.toFixed(1) || 0}%
+                    {profile?.win_rate != null ? `${profile.win_rate.toFixed(1)}%` : "N/A"}
                   </div>
                 </div>
 
                 <div>
                   <div className="text-xs text-text-muted uppercase tracking-wider">Profit Factor</div>
                   <div className="text-2xl font-bold text-text-primary">
-                    {profile?.profit_factor?.toFixed(2) || 0.00}
+                    {profile?.profit_factor != null ? profile.profit_factor.toFixed(2) : "N/A"}
                   </div>
                 </div>
               </div>
@@ -447,7 +477,7 @@ console.error("Profile fetch error JSON:", JSON.stringify(profileError, null, 2)
                 <div>
                   <div className="text-xs text-text-muted uppercase tracking-wider">Net P&L</div>
                   <div className="text-2xl font-bold tabular-nums text-profit-green">
-                    {formatPL(profile?.total_pl?.toString() || "0")}
+                    {profile?.total_pl != null ? formatPL(profile.total_pl.toString()) : "—"}
                   </div>
                 </div>
 
@@ -481,21 +511,58 @@ console.error("Profile fetch error JSON:", JSON.stringify(profileError, null, 2)
             </div>
           </CardHeader>
           <CardContent>
-            <div className="h-64 flex items-end gap-1">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((week) => {
-                const height = Math.random() * 80 + 20
-                const isPositive = Math.random() > 0.5
-                return (
-                  <div key={week} className="flex flex-col items-center gap-1 flex-1">
-                    <div
-                      className={`w-full rounded-t-sm ${isPositive ? 'bg-profit-green' : 'bg-loss-red'}`}
-                      style={{ height: `${height}px` }}
-                    />
-                    <span className="text-xs text-text-muted">W{week}</span>
-                  </div>
-                )
-              })}
-            </div>
+            {filteredTrades.length > 0 ? (
+              <div className="h-64 flex items-end gap-1">
+                {(() => {
+                  // Last 12 calendar weeks, real P&L per week
+                  const now = new Date()
+                  const currentMonday = new Date(now)
+                  currentMonday.setDate(now.getDate() - ((now.getDay() + 6) % 7))
+                  currentMonday.setHours(0, 0, 0, 0)
+
+                  const buckets: { key: string; label: string; pl: number }[] = []
+                  for (let i = 11; i >= 0; i--) {
+                    const start = new Date(currentMonday)
+                    start.setDate(currentMonday.getDate() - i * 7)
+                    buckets.push({ key: start.toISOString(), label: `W${12 - i}`, pl: 0 })
+                  }
+
+                  filteredTrades.forEach(trade => {
+                    const pl = getTradePL(trade)
+                    if (pl === null) return
+                    const d = new Date(trade.created_at)
+                    d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+                    d.setHours(0, 0, 0, 0)
+                    const bucket = buckets.find(b => b.key === d.toISOString())
+                    if (bucket) bucket.pl += pl
+                  })
+
+                  const maxPL = Math.max(0, ...buckets.map(b => Math.abs(b.pl)))
+
+                  return buckets.map((bucket) => {
+                    const height = maxPL > 0 ? (Math.abs(bucket.pl) / maxPL) * 100 : 0
+                    const isPositive = bucket.pl >= 0
+                    return (
+                      <div
+                        key={bucket.key}
+                        className="flex flex-col items-center gap-1 flex-1"
+                        title={`${new Date(bucket.key).toLocaleDateString()}: ${formatPL(bucket.pl.toString())}`}
+                      >
+                        <div
+                          className={`w-full rounded-t-sm ${isPositive ? 'bg-profit-green' : 'bg-loss-red'}`}
+                          style={{ height: `${bucket.pl !== 0 ? Math.max(height, 2) : 0}px` }}
+                        />
+                        <span className="text-xs text-text-muted">{bucket.label}</span>
+                      </div>
+                    )
+                  })
+                })()}
+              </div>
+            ) : (
+              <div className="h-64 flex items-center justify-center">
+                <p className="text-text-muted">No data yet</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 

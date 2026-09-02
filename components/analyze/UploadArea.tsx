@@ -47,11 +47,17 @@ export default function UploadArea({
                 console.log("[UPLOAD] file selected", e.target.files)
                 const selectedFile = e.target.files?.[0] || null
                 setFile(selectedFile)
+                // Reset the input value so re-selecting the same file fires change again
+                e.target.value = ""
 
-                // Auto-trigger upload for CSV files (restore pre-redesign behavior)
-                if (selectedFile && selectedFile.name.endsWith('.csv')) {
-                  console.log("[UPLOAD] Auto-triggering CSV upload")
-                  await handleUpload(selectedFile)
+                // Auto-trigger upload for any supported file (restores pre-redesign behavior)
+                if (selectedFile && (selectedFile.type.startsWith("image/") || selectedFile.name.endsWith(".csv"))) {
+                  console.log("[UPLOAD] auto-triggering handleUpload for", selectedFile.name)
+                  try {
+                    await handleUpload(selectedFile)
+                  } catch (err) {
+                    console.error("[UPLOAD] handleUpload threw:", err)
+                  }
                 }
               }}
               className="hidden"

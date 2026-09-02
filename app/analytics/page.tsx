@@ -18,9 +18,51 @@ interface Trade {
   side: string
   size: string
   discipline_score: number | null
-  violations: string[]
-  behaviorTags: string[]
+  violations: string[] | string | null
+  behaviorTags?: string[]
   created_at: string
+}
+
+// ── Real-data helpers (no fabricated values) ───────────────────────────────
+
+/** Parse a trade's violations column. The DB stores it as a JSON string. */
+function getViolations(trade: Trade): string[] {
+  const v = trade.violations
+  if (Array.isArray(v)) return v
+  if (typeof v === 'string' && v) {
+    try {
+      const parsed = JSON.parse(v)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+/** Numeric P&L, or null when the trade has no usable value. */
+function getPL(trade: Trade): number | null {
+  if (trade.realized_pl === null || trade.realized_pl === undefined) return null
+  const pl = parseFloat(trade.realized_pl)
+  return isNaN(pl) ? null : pl
+}
+
+/** Entry hour (0-23) from a trade's entry_time, or -1 when unparseable. */
+function getEntryHour(trade: Trade): number {
+  const ts = trade.entry_time
+  if (!ts) return -1
+  const d = new Date(ts)
+  if (!isNaN(d.getTime())) return d.getHours()
+  const match = ts.match(/(\d{1,2}):(\d{2})/)
+  return match ? parseInt(match[1], 10) : -1
+}
+
+/** ISO key of the Monday of the week containing `date`. */
+function getWeekKey(date: Date): string {
+  const d = new Date(date)
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7)) // Monday = 0
+  d.setHours(0, 0, 0, 0)
+  return d.toISOString()
 }
 
 export default function AnalyticsPage() {
@@ -79,34 +121,125 @@ export default function AnalyticsPage() {
   })
 
   // Calculate statistics
-  const winningTrades = filteredTrades.filter(t => t.realized_pl && parseFloat(t.realized_pl) > 0)
-  const losingTrades = filteredTrades.filter(t => t.realized_pl && parseFloat(t.realized_pl) < 0)
+  const hasData = filteredTrades.length > 0
 
-  const totalPL = filteredTrades.reduce((sum, trade) =>
-    sum + (trade.realized_pl ? parseFloat(trade.realized_pl) : 0), 0
-  )
+  const winningTrades = filteredTrades.filter(t => { const pl = getPL(t); return pl !== null && pl > 0 })
+  const losingTrades = filteredTrades.filter(t => { const pl = getPL(t); return pl !== null && pl < 0 })
 
-  const winRate = filteredTrades.length > 0 ? (winningTrades.length / filteredTrades.length) * 100 : 0
+  const totalPL = filteredTrades.reduce((sum, trade) => sum + (getPL(trade) || 0), 0)
 
-  const grossWins = winningTrades.reduce((sum, trade) =>
-    sum + (trade.realized_pl ? Math.abs(parseFloat(trade.realized_pl)) : 0), 0
-  )
+  // null (not 0) when there are no trades — the UI shows N/A for null and
+  // a real 0% only when trades exist and every one of them lost.
+  const winRate = hasData ? (winningTrades.length / filteredTrades.length) * 100 : null
 
-  const grossLosses = losingTrades.reduce((sum, trade) =>
-    sum + (trade.realized_pl ? Math.abs(parseFloat(trade.realized_pl)) : 0), 0
-  )
+  const grossWins = winningTrades.reduce((sum, trade) => sum + Math.abs(getPL(trade) || 0), 0)
+  const grossLosses = losingTrades.reduce((sum, trade) => sum + Math.abs(getPL(trade) || 0), 0)
 
-  const profitFactor = grossLosses > 0 ? grossWins / grossLosses : grossWins > 0 ? Infinity : 0
+  const profitFactor = !hasData ? null : grossLosses > 0 ? grossWins / grossLosses : grossWins > 0 ? Infinity : null
 
   const avgWin = winningTrades.length > 0
-    ? winningTrades.reduce((sum, trade) =>
-        sum + (trade.realized_pl ? parseFloat(trade.realized_pl) : 0), 0) / winningTrades.length
-    : 0
+    ? winningTrades.reduce((sum, trade) => sum + (getPL(trade) || 0), 0) / winningTrades.length
+    : null
 
   const avgLoss = losingTrades.length > 0
-    ? losingTrades.reduce((sum, trade) =>
-        sum + (trade.realized_pl ? Math.abs(parseFloat(trade.realized_pl)) : 0), 0) / losingTrades.length
+    ? losingTrades.reduce((sum, trade) => sum + Math.abs(getPL(trade) || 0), 0) / losingTrades.length
+    : null
+
+  const expectancy = hasData
+    ? ((avgWin || 0) * (winningTrades.length / filteredTrades.length)) -
+      ((avgLoss || 0) * (losingTrades.length / filteredTrades.length))
+    : null
+
+  // ── Compliance rate: % of trades with no violations (null when no trades) ──
+  const complianceRate = hasData
+    ? (filteredTrades.filter(t => getViolations(t).length === 0).length / filteredTrades.length) * 100
+    : null
+
+  // ── Behavioral pattern counts — derived from real trade data ──
+  const numericSizes = filteredTrades
+    .map(t => parseFloat(t.size))
+    .filter(s => !isNaN(s) && s > 0)
+  const avgSize = numericSizes.length > 0
+    ? numericSizes.reduce((sum, s) => sum + s, 0) / numericSizes.length
     : 0
+
+  const positivePatterns = [
+    { label: 'Disciplined Entry', count: filteredTrades.filter(t => getViolations(t).length === 0).length },
+    {
+      label: 'Proper Sizing',
+      count: avgSize > 0
+        ? filteredTrades.filter(t => {
+            const s = parseFloat(t.size)
+            return !isNaN(s) && s > 0 && s <= avgSize * 2
+          }).length
+        : 0,
+    },
+    { label: 'Followed Plan', count: filteredTrades.filter(t => t.discipline_score != null && t.discipline_score >= 70).length },
+  ].filter(p => p.count > 0)
+
+  const negativePatterns = [
+    {
+      label: 'Chased Entry',
+      count: filteredTrades.filter(t =>
+        getViolations(t).some(v => /timing|entry|late|chase/i.test(v))
+      ).length,
+    },
+    {
+      label: 'Oversized Position',
+      count: avgSize > 0
+        ? filteredTrades.filter(t => {
+            const s = parseFloat(t.size)
+            return !isNaN(s) && s > 0 && s > avgSize * 2
+          }).length
+        : 0,
+    },
+    {
+      label: 'Early Exit',
+      count: filteredTrades.filter(t =>
+        getViolations(t).some(v => /exit|early/i.test(v))
+      ).length,
+    },
+  ].filter(p => p.count > 0)
+
+  // ── Most common violations — grouped into the app's established categories ──
+  const commonViolations = [
+    { label: 'Position Sizing', count: filteredTrades.filter(t => getViolations(t).some(v => /size|sizing|position/i.test(v))).length },
+    { label: 'Entry Timing', count: filteredTrades.filter(t => getViolations(t).some(v => /timing|entry|early|late|chase/i.test(v))).length },
+    { label: 'Rule Violation', count: filteredTrades.filter(t => getViolations(t).some(v => v && v.trim().length > 0)).length },
+  ].filter(v => v.count > 0)
+
+  // ── Performance by week: last 12 calendar weeks, real P&L ──
+  const weekBuckets: { key: string; label: string; pl: number }[] = []
+  {
+    const now = new Date()
+    const currentMonday = new Date(now)
+    currentMonday.setDate(now.getDate() - ((now.getDay() + 6) % 7))
+    currentMonday.setHours(0, 0, 0, 0)
+    for (let i = 11; i >= 0; i--) {
+      const start = new Date(currentMonday)
+      start.setDate(currentMonday.getDate() - i * 7)
+      weekBuckets.push({ key: start.toISOString(), label: `W${12 - i}`, pl: 0 })
+    }
+  }
+  filteredTrades.forEach(trade => {
+    const pl = getPL(trade)
+    if (pl === null) return
+    const bucket = weekBuckets.find(b => b.key === getWeekKey(new Date(trade.created_at)))
+    if (bucket) bucket.pl += pl
+  })
+  const maxWeekPL = Math.max(0, ...weekBuckets.map(b => Math.abs(b.pl)))
+
+  // ── Performance by hour: 9:00-20:00, real P&L by entry hour ──
+  const hourBuckets: { hour: number; pl: number }[] =
+    Array.from({ length: 12 }, (_, i) => ({ hour: i + 9, pl: 0 }))
+  filteredTrades.forEach(trade => {
+    const pl = getPL(trade)
+    if (pl === null) return
+    const hour = getEntryHour(trade)
+    const bucket = hourBuckets.find(b => b.hour === hour)
+    if (bucket) bucket.pl += pl
+  })
+  const maxHourPL = Math.max(0, ...hourBuckets.map(b => Math.abs(b.pl)))
 
   // Calculate performance by strategy/setup
   const strategyPerformance: Record<string, { count: number; totalPL: number }> = {}
@@ -116,7 +249,7 @@ export default function AnalyticsPage() {
         strategyPerformance[tag] = { count: 0, totalPL: 0 }
       }
       strategyPerformance[tag].count++
-      strategyPerformance[tag].totalPL += trade.realized_pl ? parseFloat(trade.realized_pl) : 0
+      strategyPerformance[tag].totalPL += getPL(trade) || 0
     })
   })
 
@@ -160,7 +293,7 @@ export default function AnalyticsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold tabular-nums">
-              {formatPL(totalPL.toString())}
+              {hasData ? formatPL(totalPL.toString()) : "—"}
             </div>
             <div className="text-xs text-text-muted mt-1">
               {filteredTrades.length} trades
@@ -168,13 +301,13 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
 
-        <Card sentiment={winRate >= 60 ? "profit" : winRate >= 40 ? "neutral" : "loss"}>
+        <Card sentiment={winRate !== null && winRate >= 60 ? "profit" : winRate !== null && winRate >= 40 ? "neutral" : "loss"}>
           <CardHeader>
             <CardTitle className="text-sm font-medium uppercase tracking-wider text-text-muted">Win Rate</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {winRate.toFixed(1)}%
+              {winRate !== null ? `${winRate.toFixed(1)}%` : "—"}
             </div>
             <div className="text-xs text-text-muted mt-1">
               {winningTrades.length} wins / {losingTrades.length} losses
@@ -182,30 +315,30 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
 
-        <Card sentiment={profitFactor >= 1.5 ? "profit" : profitFactor >= 1 ? "neutral" : "loss"}>
+        <Card sentiment={profitFactor !== null && profitFactor >= 1.5 ? "profit" : profitFactor !== null && profitFactor >= 1 ? "neutral" : "loss"}>
           <CardHeader>
             <CardTitle className="text-sm font-medium uppercase tracking-wider text-text-muted">Profit Factor</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {profitFactor.toFixed(2)}
+              {profitFactor !== null ? profitFactor.toFixed(2) : "—"}
             </div>
             <div className="text-xs text-text-muted mt-1">
-              ${grossWins.toFixed(0)} / ${grossLosses.toFixed(0)}
+              {hasData ? `$${grossWins.toFixed(0)} / $${grossLosses.toFixed(0)}` : "—"}
             </div>
           </CardContent>
         </Card>
 
-        <Card sentiment={avgWin > avgLoss ? "profit" : "loss"}>
+        <Card sentiment={avgWin !== null && avgWin > (avgLoss || 0) ? "profit" : "loss"}>
           <CardHeader>
             <CardTitle className="text-sm font-medium uppercase tracking-wider text-text-muted">Avg Win/Loss</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-lg font-bold text-profit-green">
-              +${avgWin.toFixed(2)}
+              {avgWin !== null ? `+$${avgWin.toFixed(2)}` : "—"}
             </div>
             <div className="text-lg font-bold text-loss-red">
-              -${avgLoss.toFixed(2)}
+              {avgLoss !== null ? `-$${avgLoss.toFixed(2)}` : "—"}
             </div>
           </CardContent>
         </Card>
@@ -216,7 +349,7 @@ export default function AnalyticsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {((avgWin * (winningTrades.length / filteredTrades.length)) - (avgLoss * (losingTrades.length / filteredTrades.length))).toFixed(2)}
+              {expectancy !== null ? expectancy.toFixed(2) : "—"}
             </div>
             <div className="text-xs text-text-muted mt-1">
               Per trade
@@ -236,21 +369,31 @@ export default function AnalyticsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="h-64 flex items-end gap-1">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((week) => {
-                const height = Math.random() * 80 + 20
-                const isPositive = Math.random() > 0.5
-                return (
-                  <div key={week} className="flex flex-col items-center gap-1 flex-1">
+            {hasData ? (
+              <div className="h-64 flex items-end gap-1">
+                {weekBuckets.map((bucket) => {
+                  const height = maxWeekPL > 0 ? (Math.abs(bucket.pl) / maxWeekPL) * 100 : 0
+                  const isPositive = bucket.pl >= 0
+                  return (
                     <div
-                      className={`w-full rounded-t-sm ${isPositive ? 'bg-profit-green' : 'bg-loss-red'}`}
-                      style={{ height: `${height}px` }}
-                    />
-                    <span className="text-xs text-text-muted">W{week}</span>
-                  </div>
-                )
-              })}
-            </div>
+                      key={bucket.key}
+                      className="flex flex-col items-center gap-1 flex-1"
+                      title={`${new Date(bucket.key).toLocaleDateString()}: ${formatPL(bucket.pl.toString())}`}
+                    >
+                      <div
+                        className={`w-full rounded-t-sm ${isPositive ? 'bg-profit-green' : 'bg-loss-red'}`}
+                        style={{ height: `${bucket.pl !== 0 ? Math.max(height, 2) : 0}px` }}
+                      />
+                      <span className="text-xs text-text-muted">{bucket.label}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="h-64 flex items-center justify-center">
+                <p className="text-text-muted">No data yet</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -263,21 +406,31 @@ export default function AnalyticsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="h-64 flex items-end gap-1">
-              {Array.from({ length: 12 }, (_, i) => i + 9).map((hour) => {
-                const height = Math.random() * 80 + 20
-                const isPositive = Math.random() > 0.5
-                return (
-                  <div key={hour} className="flex flex-col items-center gap-1 flex-1">
+            {hasData ? (
+              <div className="h-64 flex items-end gap-1">
+                {hourBuckets.map((bucket) => {
+                  const height = maxHourPL > 0 ? (Math.abs(bucket.pl) / maxHourPL) * 100 : 0
+                  const isPositive = bucket.pl >= 0
+                  return (
                     <div
-                      className={`w-full rounded-t-sm ${isPositive ? 'bg-profit-green' : 'bg-loss-red'}`}
-                      style={{ height: `${height}px` }}
-                    />
-                    <span className="text-xs text-text-muted">{hour}:00</span>
-                  </div>
-                )
-              })}
-            </div>
+                      key={bucket.hour}
+                      className="flex flex-col items-center gap-1 flex-1"
+                      title={`${bucket.hour}:00 — ${formatPL(bucket.pl.toString())}`}
+                    >
+                      <div
+                        className={`w-full rounded-t-sm ${isPositive ? 'bg-profit-green' : 'bg-loss-red'}`}
+                        style={{ height: `${bucket.pl !== 0 ? Math.max(height, 2) : 0}px` }}
+                      />
+                      <span className="text-xs text-text-muted">{bucket.hour}:00</span>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="h-64 flex items-center justify-center">
+                <p className="text-text-muted">No data yet</p>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -328,19 +481,27 @@ export default function AnalyticsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {['Disciplined Entry', 'Proper Sizing', 'Followed Plan'].map((pattern) => (
-                  <div key={pattern} className="flex items-center justify-between p-2 rounded-lg hover:bg-neutral-fill">
-                    <div className="flex items-center gap-3">
-                      <div className="w-5 h-5 rounded-full flex items-center justify-center bg-profit-green/20">
-                        <TrendingUp className="w-4 h-4 text-profit-green" />
+              {positivePatterns.length > 0 ? (
+                <div className="space-y-3">
+                  {positivePatterns.map((pattern) => (
+                    <div key={pattern.label} className="flex items-center justify-between p-2 rounded-lg hover:bg-neutral-fill">
+                      <div className="flex items-center gap-3">
+                        <div className="w-5 h-5 rounded-full flex items-center justify-center bg-profit-green/20">
+                          <TrendingUp className="w-4 h-4 text-profit-green" />
+                        </div>
+                        <span className="text-sm text-text-primary">{pattern.label}</span>
                       </div>
-                      <span className="text-sm text-text-primary">{pattern}</span>
+                      <span className="text-sm font-medium text-profit-green">{pattern.count} {pattern.count === 1 ? 'occurrence' : 'occurrences'}</span>
                     </div>
-                    <span className="text-sm font-medium text-profit-green">{Math.floor(Math.random() * 20) + 5} occurrences</span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <p className="text-sm text-text-muted">
+                    {filteredTrades.length === 0 ? "No data yet — patterns will appear once you have trades" : "No positive patterns detected yet"}
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -353,19 +514,27 @@ export default function AnalyticsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {['Chased Entry', 'Oversized Position', 'Early Exit'].map((pattern) => (
-                  <div key={pattern} className="flex items-center justify-between p-2 rounded-lg hover:bg-neutral-fill">
-                    <div className="flex items-center gap-3">
-                      <div className="w-5 h-5 rounded-full flex items-center justify-center bg-loss-red/20">
-                        <TrendingDown className="w-4 h-4 text-loss-red" />
+              {negativePatterns.length > 0 ? (
+                <div className="space-y-3">
+                  {negativePatterns.map((pattern) => (
+                    <div key={pattern.label} className="flex items-center justify-between p-2 rounded-lg hover:bg-neutral-fill">
+                      <div className="flex items-center gap-3">
+                        <div className="w-5 h-5 rounded-full flex items-center justify-center bg-loss-red/20">
+                          <TrendingDown className="w-4 h-4 text-loss-red" />
+                        </div>
+                        <span className="text-sm text-text-primary">{pattern.label}</span>
                       </div>
-                      <span className="text-sm text-text-primary">{pattern}</span>
+                      <span className="text-sm font-medium text-loss-red">{pattern.count} {pattern.count === 1 ? 'occurrence' : 'occurrences'}</span>
                     </div>
-                    <span className="text-sm font-medium text-loss-red">{Math.floor(Math.random() * 10) + 2} occurrences</span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <p className="text-sm text-text-muted">
+                    {filteredTrades.length === 0 ? "No data yet — patterns will appear once you have trades" : "No negative patterns detected yet"}
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -390,12 +559,14 @@ export default function AnalyticsPage() {
                       stroke="#3B6EF6"
                       strokeWidth="8"
                       strokeDasharray="251.2"
-                      strokeDashoffset="50.24"
+                      strokeDashoffset={complianceRate !== null ? 251.2 * (1 - complianceRate / 100) : 251.2}
                       strokeLinecap="round"
                     />
                   </svg>
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-xl font-bold text-text-primary">78%</div>
+                    <div className="text-xl font-bold text-text-primary">
+                      {complianceRate !== null ? `${Math.round(complianceRate)}%` : "N/A"}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -411,19 +582,27 @@ export default function AnalyticsPage() {
               <CardTitle className="text-sm font-medium uppercase tracking-wider text-text-muted">Most Common Violations</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {['Position Sizing', 'Entry Timing', 'Rule Violation'].map((violation, index) => (
-                  <div key={violation} className="flex items-center justify-between p-2 rounded-lg hover:bg-neutral-fill">
-                    <div className="flex items-center gap-3">
-                      <div className="w-5 h-5 rounded-full flex items-center justify-center bg-loss-red/20">
-                        <span className="text-xs text-loss-red">!</span>
+              {commonViolations.length > 0 ? (
+                <div className="space-y-3">
+                  {commonViolations.map((violation) => (
+                    <div key={violation.label} className="flex items-center justify-between p-2 rounded-lg hover:bg-neutral-fill">
+                      <div className="flex items-center gap-3">
+                        <div className="w-5 h-5 rounded-full flex items-center justify-center bg-loss-red/20">
+                          <span className="text-xs text-loss-red">!</span>
+                        </div>
+                        <span className="text-sm text-text-primary">{violation.label}</span>
                       </div>
-                      <span className="text-sm text-text-primary">{violation}</span>
+                      <span className="text-sm font-medium text-text-primary">{violation.count} {violation.count === 1 ? 'time' : 'times'}</span>
                     </div>
-                    <span className="text-sm font-medium text-text-primary">{Math.floor(Math.random() * 15) + 3} times</span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <p className="text-sm text-text-muted">
+                    {filteredTrades.length === 0 ? "No data yet" : "No violations recorded"}
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

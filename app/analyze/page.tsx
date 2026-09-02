@@ -81,9 +81,8 @@ export default function AnalyzePage() {
       setChartLoading(false)
       setChartError(null)
     } else {
-      setChartLoading(false)
-      setCandles([])
-      setChartError(null)
+      // Fetch chart data separately — failures here must never affect the trade
+      fetchChartData(trade.ticker, trade.entry_time, trade.exit_time, tradeId)
     }
 
     setCoachingResponse(null)
@@ -329,28 +328,61 @@ export default function AnalyzePage() {
         setAnalysisPhase(null)
       } else if (uploadedFile.type.startsWith('image/')) {
         // Handle screenshot analysis
+        console.log("[UPLOAD] starting screenshot analysis")
         setAnalysisPhase("Analyzing screenshot...")
         await new Promise(r => setTimeout(r, 50))
 
         try {
+          console.log("[UPLOAD] creating FormData")
           const formData = new FormData()
           formData.append('file', uploadedFile)
 
+          console.log("[UPLOAD] sending POST /api/analyze")
           const response = await fetch('/api/analyze', {
             method: 'POST',
             body: formData
           })
+          console.log("[UPLOAD] response received, status:", response.status)
 
-          if (!response.ok) {
-            throw new Error('Screenshot analysis failed')
+          let tradeData: any = null
+          try {
+            tradeData = await response.json()
+          } catch {
+            tradeData = null
           }
 
-          const tradeData = await response.json()
+          if (!response.ok) {
+            const apiError = tradeData?.error || response.statusText || `HTTP ${response.status}`
+            console.error("[UPLOAD] Screenshot analysis failed:", apiError)
+            setShowFailureMessage(`Failed to analyze screenshot: ${apiError}`)
+            return
+          }
 
           if (!tradeData || !tradeData.ticker) {
+            console.warn("[UPLOAD] No trade data extracted from screenshot")
             setShowFailureMessage("No trades found. Please check that your screenshot contains valid trade information.")
             return
           }
+
+          // Compute violations/discipline the same way the CSV path does
+          const realizedPl = tradeData.realized_pl ? parseFloat(tradeData.realized_pl) : null
+          let tradeViolations = checkRules({
+            ticker: tradeData.ticker,
+            price: tradeData.entry ? parseFloat(tradeData.entry) : undefined,
+            time: tradeData.time
+          })
+          tradeViolations = checkDangerousWin(tradeViolations, realizedPl)
+          const violationCost = calculateViolationCost(tradeViolations, realizedPl)
+          const disciplineScore = calculateDisciplineScore(tradeViolations)
+
+          console.log("[UPLOAD] parsed trade:", {
+            ticker: tradeData.ticker,
+            entry: tradeData.entry,
+            exit: tradeData.exit,
+            size: tradeData.size,
+            time: tradeData.time,
+            exit_time: tradeData.exit_time
+          })
 
           // Build TradeData from screenshot analysis
           const tradeList: TradeData[] = [{
@@ -372,14 +404,10 @@ export default function AnalyzePage() {
               direction: tradeData.direction
             })?.toFixed(2) || null,
             holdTime: computeHoldTime(tradeData.time, tradeData.exit_time),
-            violations: checkRules({
-              ticker: tradeData.ticker,
-              price: tradeData.entry ? parseFloat(tradeData.entry) : undefined,
-              time: tradeData.time
-            }),
-            violationsCount: 0,
-            discipline_score: null,
-            violation_cost: null,
+            violations: tradeViolations,
+            violationsCount: tradeViolations.length,
+            discipline_score: disciplineScore,
+            violation_cost: violationCost.toFixed(2),
             displayTime: tradeData.time ? new Date(tradeData.time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : 'Missing',
             chartData: null,
             tradeMetrics: null,
@@ -395,26 +423,33 @@ export default function AnalyzePage() {
           console.log('[DB INSERT] Current authenticated user:', user)
           console.log('[DB INSERT] User ID:', user?.id)
 
-          // Save trades to Supabase if user is authenticated
+          // Save trade to Supabase if user is authenticated. saveTradesToSupabase
+          // internally calls setTrades() with the DB ids, so don't clobber them here.
           if (user) {
             setAnalysisPhase("Saving trades to database...")
-            await saveTradesToSupabase(tradeList, user.id, setTrades, setShowFailureMessage)
+            try {
+              await saveTradesToSupabase(tradeList, user.id, setTrades, setShowFailureMessage)
+            } catch (saveErr) {
+              console.error("[DB INSERT] Failed to save trade:", saveErr)
+              // Still show the parsed trade locally so it doesn't silently disappear
+              setTrades(tradeList)
+              setShowFailureMessage(`Failed to save trade: ${saveErr instanceof Error ? saveErr.message : String(saveErr)}`)
+            }
           } else {
             console.log('[DB INSERT] No authenticated user - trades will not be saved')
+            setTrades(tradeList)
             setShowFailureMessage("You need to be logged in to save trades. Please sign in to save your analyzed trades.")
           }
 
-          setTrades(tradeList)
           setSelectedTradeIndex(0)
           setAnalysisResult({
             success: true,
             message: `Screenshot analyzed successfully. Found ${tradeList.length} trade${tradeList.length === 1 ? '' : 's'}.`,
             tradeCount: tradeList.length
           })
-          setShowFailureMessage(null)
         } catch (error) {
           console.error("Error analyzing screenshot:", error)
-          setShowFailureMessage("Analysis failed. Please try again.")
+          setShowFailureMessage(`Failed to analyze screenshot: ${error instanceof Error ? error.message : String(error)}`)
         }
         setAnalysisPhase(null)
       } else {
@@ -422,9 +457,10 @@ export default function AnalyzePage() {
       }
      } catch (error) {
        console.error("Error handling upload:", error)
-       setShowFailureMessage("Analysis failed. Please try again.")
+       setShowFailureMessage(`Analysis failed: ${error instanceof Error ? error.message : String(error)}`)
      } finally {
        setLoading(false)
+       setAnalysisPhase(null)
      }
   }
 
