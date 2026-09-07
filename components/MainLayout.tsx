@@ -7,7 +7,12 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
 
   // Check if current route should hide sidebar (like login, auth pages)
-  const hideSidebar = pathname === '/login' || pathname === '/forgot-password' || pathname === '/reset-password' || pathname === '/onboarding'
+  const hideSidebar =
+    pathname === "/login" ||
+    pathname === "/forgot-password" ||
+    pathname === "/reset-password" ||
+    pathname === "/onboarding" ||
+    pathname.startsWith("/invite/")
 
   return (
     <div className="flex h-screen overflow-hidden">

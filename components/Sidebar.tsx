@@ -13,6 +13,7 @@ const navItems = [
   { name: "Journal", href: "/journal", icon: BookOpen },
   { name: "Analytics", href: "/analytics", icon: TrendingUp },
   { name: "Replay", href: "/replay", icon: Play },
+  { name: "Firm", href: "/firm", icon: GraduationCap },
   { name: "Profile", href: "/profile", icon: User },
   { name: "Home", href: "/", icon: Home },
 ]
@@ -63,7 +64,10 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto">
         <ul className="space-y-1">
           {navItems.map((item) => {
-            const isActive = pathname === item.href
+            const isActive =
+              item.href === "/firm"
+                ? pathname === "/firm" || pathname.startsWith("/firm/")
+                : pathname === item.href
             return (
               <li key={item.name}>
                 <Link
@@ -80,7 +84,7 @@ export function Sidebar() {
             )
           })}
 
-          {/* Coach item - only visible if user has coach role */}
+          {/* Legacy placeholder link to student AI-coach page — kept separate from Firm */}
           {hasCoachRole && (
             <li>
               <Link
@@ -88,7 +92,7 @@ export function Sidebar() {
                 className={`flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${pathname === '/coach' ? 'bg-accent-tint text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-neutral-fill'}`}
               >
                 <GraduationCap className={`w-5 h-5 ${pathname === '/coach' ? 'text-accent' : 'text-text-muted'}`} />
-                {!isCollapsed && "Coach"}
+                {!isCollapsed && "AI Coach"}
                 {pathname === '/coach' && !isCollapsed && (
                   <div className="ml-auto w-1 h-6 bg-accent rounded-full" />
                 )}

@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { getSupabasePublishableKey, getSupabaseUrl } from '@/lib/supabase-env'
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -9,8 +10,8 @@ export async function updateSession(request: NextRequest) {
   // With Fluid compute, don't put this client in a global environment
   // variable. Always create a new one on each request.
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    getSupabaseUrl(),
+    getSupabasePublishableKey(),
     {
       cookies: {
         getAll() {
@@ -41,11 +42,16 @@ export async function updateSession(request: NextRequest) {
   if (
     !user &&
     !request.nextUrl.pathname.startsWith('/login') &&
-    !request.nextUrl.pathname.startsWith('/auth')
+    !request.nextUrl.pathname.startsWith('/auth') &&
+    !request.nextUrl.pathname.startsWith('/invite') &&
+    !request.nextUrl.pathname.startsWith('/forgot-password') &&
+    !request.nextUrl.pathname.startsWith('/reset-password')
   ) {
     // no user, potentially respond by redirecting the user to the login page
     const url = request.nextUrl.clone()
-    url.pathname = '/auth/login'
+    const nextPath = request.nextUrl.pathname + request.nextUrl.search
+    url.pathname = '/login'
+    url.searchParams.set('next', nextPath)
     return NextResponse.redirect(url)
   }
 

@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+import { safeNextPath } from "@/lib/firm/tokens";
+
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -14,11 +16,19 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  function resolvePostAuthRedirect() {
+    if (typeof window === "undefined") return "/dashboard";
+    const next = new URLSearchParams(window.location.search).get("next");
+    // Invite return paths take priority over onboarding so firm join can complete.
+    if (next) return safeNextPath(next, "/dashboard");
+    return null;
+  }
+
   async function handleSubmit() {
     setLoading(true);
     setError("");
 
-    const { error, data } = isSignUp
+    const { error } = isSignUp
       ? await supabase.auth.signUp({ email, password })
       : await supabase.auth.signInWithPassword({ email, password });
 
@@ -30,6 +40,12 @@ export default function LoginPage() {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
+        const forcedNext = resolvePostAuthRedirect();
+        if (forcedNext) {
+          window.location.href = forcedNext;
+          return;
+        }
+
         // Check if user has completed onboarding via API
         try {
           const response = await fetch(`/api/profile?userId=${user.id}`);
