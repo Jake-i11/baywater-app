@@ -18,6 +18,10 @@ export type FirmCoachContext = {
   /** Organization in scope for the current request (when orgId provided and authorized). */
   active: FirmCoachOrgSummary | null;
 };
+export type CoachContextResult =
+  | { ok: true; context: FirmCoachContext }
+  | { ok: false; status: 401 | 404; error: string };
+
 
 export type FirmCoachOverviewResponse = {
   organization_id: string;

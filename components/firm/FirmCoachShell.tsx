@@ -8,6 +8,7 @@ const tabs = [
   { href: "", label: "Overview" },
   { href: "/roster", label: "Roster" },
   { href: "/performance", label: "Performance" },
+  { href: "/invite", label: "Invite" },
 ];
 
 export function FirmCoachNav({

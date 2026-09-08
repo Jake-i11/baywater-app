@@ -14,6 +14,7 @@ const navItems = [
   { name: "Analytics", href: "/analytics", icon: TrendingUp },
   { name: "Replay", href: "/replay", icon: Play },
   { name: "Firm", href: "/firm", icon: GraduationCap },
+  { name: "Create Organization", href: "/firm/new", icon: Plus },
   { name: "Profile", href: "/profile", icon: User },
   { name: "Home", href: "/", icon: Home },
 ]

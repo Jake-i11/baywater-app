@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { getSupabasePublishableKey, getSupabaseUrl } from '@/lib/supabase-env'
+import { getSupabasePublishableKey, getSupabaseUrl, getSupabaseAnonKey } from '@/lib/supabase-env'
 
 /**
  * If using Fluid compute: Don't put this client in a global variable. Always create a new client within each
@@ -11,7 +11,7 @@ export async function createClient() {
 
   return createServerClient(
     getSupabaseUrl(),
-    getSupabasePublishableKey(),
+    getSupabaseAnonKey(),
     {
       cookies: {
         getAll() {

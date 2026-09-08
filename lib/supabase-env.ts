@@ -1,3 +1,18 @@
+export function getSupabaseAnonKey(): string {
+  const key =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
+  if (!key) {
+    throw new Error(
+      "Missing NEXT_PUBLIC_SUPABASE_ANON_KEY (or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)"
+    );
+  }
+
+  return key;
+}
+
+
 /**
  * Public Supabase key for authenticated/anon clients (RLS enforced).
  * Prefer ANON_KEY (what .env.local provides); fall back to PUBLISHABLE_KEY
