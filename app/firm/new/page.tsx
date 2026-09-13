@@ -22,10 +22,6 @@ async function createOrganization(formData: FormData): Promise<void> {
 
 export default async function NewOrganizationPage() {
   const result = await getCoachContext();
-if (!result.ok) {
-  redirect('/login');
-}
-const { context } = result;
   
   if (!result.ok) {
     redirect('/login');

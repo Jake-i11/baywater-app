@@ -30,6 +30,9 @@ export default function FirmInvitePage() {
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [isLoadingInvitations, setIsLoadingInvitations] = useState(true);
+  const [invitationsError, setInvitationsError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,12 +62,49 @@ export default function FirmInvitePage() {
 
       setInviteUrl(inviteResult.data?.inviteUrl ?? null);
       setFormData({ email: "", role: "student" });
+
+      // Refresh invitations after successful creation
+      const supabase = await createClient();
+      const { data, error } = await supabase
+        .from("invitations")
+        .select("id, email, role, status, created_at, expires_at")
+        .eq("organization_id", orgId)
+        .order("created_at", { ascending: false });
+
+      if (!error) setInvitations(data || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create invitation");
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  useEffect(() => {
+    const fetchInvitations = async () => {
+      try {
+        const result = await getCoachContext(orgId);
+        if (!result.ok) {
+          throw new Error(result.error);
+        }
+
+        const supabase = await createClient();
+        const { data, error } = await supabase
+          .from("invitations")
+          .select("id, email, role, status, created_at, expires_at")
+          .eq("organization_id", orgId)
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+        setInvitations(data || []);
+      } catch (err) {
+        setInvitationsError(err instanceof Error ? err.message : "Failed to load invitations");
+      } finally {
+        setIsLoadingInvitations(false);
+      }
+    };
+
+    fetchInvitations();
+  }, [orgId]);
 
   const handleCopy = async () => {
     if (!inviteUrl) return;
@@ -77,8 +117,39 @@ export default function FirmInvitePage() {
     }
   };
 
+  const getStatusDisplay = (status: string, expiresAt: string): string => {
+    if (status === "pending" && new Date(expiresAt) < new Date()) {
+      return "Expired";
+    }
+    return status.charAt(0).toUpperCase() + status.slice(1);
+  };
+
+  const getStatusColor = (status: string, expiresAt: string): string => {
+    if (status === "pending" && new Date(expiresAt) < new Date()) {
+      return "bg-yellow-100 text-yellow-800";
+    }
+    switch (status) {
+      case "pending":
+        return "bg-blue-100 text-blue-800";
+      case "accepted":
+        return "bg-green-100 text-green-800";
+      case "declined":
+        return "bg-red-100 text-red-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const formatDate = (dateString: string): string => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
   if (error === "Not found") {
-    return <FirmEmpty title="Not found" body="This firm page isn’t available." />;
+    return <FirmEmpty title="Not found" body="This firm page isn't available." />;
   }
 
   if (inviteUrl) {
@@ -167,115 +238,11 @@ export default function FirmInvitePage() {
             disabled={isSubmitting}
             className={`mt-6 rounded px-4 py-2 text-sm font-medium transition-colors ${
               isSubmitting
-  const [invitations, setInvitations] = useState<Invitation[]>([]);
-  const [isLoadingInvitations, setIsLoadingInvitations] = useState(true);
-  const [invitationsError, setInvitationsError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchInvitations = async () => {
-      try {
-        const result = await getCoachContext(orgId);
-        if (!result.ok) {
-          throw new Error(result.error);
-        }
-
-        const supabase = await createClient();
-        const { data, error } = await supabase
-          .from("invitations")
-          .select("id, email, role, status, created_at, expires_at")
-          .eq("organization_id", orgId)
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-        setInvitations(data || []);
-      } catch (err) {
-        setInvitationsError(err instanceof Error ? err.message : "Failed to load invitations");
-      } finally {
-        setIsLoadingInvitations(false);
-      }
-    };
-
-    fetchInvitations();
-  }, [orgId]);
                 ? "cursor-not-allowed bg-accent/50 text-accent-foreground"
                 : "bg-accent text-accent-foreground hover:bg-accent/90"
             }`}
           >
             Send invitation
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setError(null);
-
-    try {
-      const result = await getCoachContext(orgId);
-      if (!result.ok) {
-        throw new Error(result.error);
-      }
-
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7);
-
-      const inviteResult = await firmCreateInvitationWithToken({
-        organizationId: orgId,
-        role: formData.role,
-        email: formData.email,
-        expiresAt: expiresAt.toISOString(),
-        origin: window.location.origin,
-      });
-
-      if (inviteResult.error) {
-        throw new Error(inviteResult.error.message);
-      }
-
-      setInviteUrl(inviteResult.data?.inviteUrl ?? null);
-      setFormData({ email: "", role: "student" });
-
-      // Refresh invitations after successful creation
-      const supabase = await createClient();
-      const { data, error } = await supabase
-        .from("invitations")
-        .select("id, email, role, status, created_at, expires_at")
-        .eq("organization_id", orgId)
-  const getStatusDisplay = (status: string, expiresAt: string): string => {
-    if (status === "pending" && new Date(expiresAt) < new Date()) {
-      return "Expired";
-    }
-    return status.charAt(0).toUpperCase() + status.slice(1);
-  };
-
-  const getStatusColor = (status: string, expiresAt: string): string => {
-    if (status === "pending" && new Date(expiresAt) < new Date()) {
-      return "bg-yellow-100 text-yellow-800";
-    }
-    switch (status) {
-      case "pending":
-        return "bg-blue-100 text-blue-800";
-      case "accepted":
-        return "bg-green-100 text-green-800";
-      case "declined":
-        return "bg-red-100 text-red-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
-  const formatDate = (dateString: string): string => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  };
-        .order("created_at", { ascending: false });
-
-      if (!error) setInvitations(data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create invitation");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
           </button>
         </form>
       )}

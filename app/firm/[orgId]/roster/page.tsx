@@ -9,10 +9,10 @@ import {
   FirmLoading,
   formatCoachPL,
   formatCoachRate,
-import { createClient } from "@/lib/server";
-import { firmRevokeMembership } from "@/lib/firm/rpc";
 } from "@/components/firm/FirmCoachShell";
 import type { FirmCoachRosterResponse } from "@/lib/firm/types";
+import { getCoachContext } from "@/lib/firm/context";
+import { firmRevokeMembership } from "@/lib/firm/rpc";
 
 export default function FirmRosterPage() {
   const params = useParams<{ orgId: string }>();
@@ -22,6 +22,9 @@ export default function FirmRosterPage() {
   const [data, setData] = useState<FirmCoachRosterResponse | null>(null);
   const [orgName, setOrgName] = useState("Firm");
   const [error, setError] = useState<string | null>(null);
+  const [isRevoking, setIsRevoking] = useState(false);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
+  const [revokeSuccess, setRevokeSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,11 +61,48 @@ export default function FirmRosterPage() {
     };
   }, [orgId, router, sort]);
 
+  const handleRevoke = async (membershipId: string, pseudonym: string) => {
+    if (!window.confirm(`Are you sure you want to revoke access for ${pseudonym}? This action cannot be undone.`)) {
+      return;
+    }
+
+    setIsRevoking(true);
+    setRevokeError(null);
+    setRevokeSuccess(null);
+
+    try {
+      const result = await getCoachContext(orgId);
+      if (!result.ok) {
+        throw new Error(result.error);
+      }
+
+      const { error } = await firmRevokeMembership(membershipId);
+
+      if (error) throw error;
+
+      setRevokeSuccess(`Successfully revoked ${pseudonym}'s access.`);
+
+      // Refresh the roster
+      const rosterRes = await fetch(`/api/firm/${orgId}/roster?sort=${sort}`, {
+        cache: "no-store"
+      });
+      if (!rosterRes.ok) {
+        throw new Error("Failed to refresh roster");
+      }
+      const roster = (await rosterRes.json()) as FirmCoachRosterResponse;
+      setData(roster);
+    } catch (err) {
+      setRevokeError(err instanceof Error ? err.message : "Failed to revoke membership");
+    } finally {
+      setIsRevoking(false);
+    }
+  };
+
   if (error === "Not found") {
-    return <FirmEmpty title="Not found" body="This firm page isn’t available." />;
+    return <FirmEmpty title="Not found" body="This firm page isn\u2019t available." />;
   }
   if (error) return <FirmEmpty title="Error" body={error} />;
-  if (!data) return <FirmLoading label="Loading roster…" />;
+  if (!data) return <FirmLoading label="Loading roster\u2026" />;
 
   return (
     <FirmCoachNav orgId={orgId} orgName={orgName}>
@@ -80,6 +120,17 @@ export default function FirmRosterPage() {
         </select>
       </div>
 
+      {revokeError && (
+        <div className="mb-4 rounded bg-destructive/10 p-3 text-sm text-destructive">
+          {revokeError}
+        </div>
+      )}
+      {revokeSuccess && (
+        <div className="mb-4 rounded bg-success/10 p-3 text-sm text-success">
+          {revokeSuccess}
+        </div>
+      )}
+
       {data.students.length === 0 ? (
         <FirmEmpty
           title="No authorized students"
@@ -96,7 +147,7 @@ export default function FirmRosterPage() {
                 <th className="px-4 py-3 font-medium">P&L</th>
                 <th className="px-4 py-3 font-medium">Win rate</th>
                 <th className="px-4 py-3 font-medium">Discipline</th>
-                  <th className="px-4 py-3 font-medium">Actions</th>
+                <th className="px-4 py-3 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -119,91 +170,18 @@ export default function FirmRosterPage() {
                   <td className="px-4 py-3 tabular-nums">
                     {s.average_discipline_score != null
                       ? Math.round(s.average_discipline_score)
-                      : "—"}
+                      : "\u2014"}
                   </td>
-                </tr>
                   <td className="px-4 py-3">
                     <button
                       onClick={() => handleRevoke(s.membership_id, s.pseudonym)}
+                      disabled={isRevoking}
                       className="text-sm text-destructive hover:underline"
                     >
                       Revoke
                     </button>
-  const [isRevoking, setIsRevoking] = useState(false);
-  const [revokeError, setRevokeError] = useState<string | null>(null);
-  const [revokeSuccess, setRevokeSuccess] = useState<string | null>(null);
-
-  const handleRevoke = async (membershipId: string, pseudonym: string) => {
-    if (!window.confirm(`Are you sure you want to revoke access for ${pseudonym}? This action cannot be undone.`)) {
-      return;
-    }
-
-    setIsRevoking(true);
-    setRevokeError(null);
-    setRevokeSuccess(null);
-
-    try {
-      const result = await getCoachContext(orgId);
-      if (!result.ok) {
-        throw new Error(result.error);
-      }
-
-  {revokeError && (
-    <div className="mt-4 rounded bg-destructive/10 p-3 text-sm text-destructive">
-      {revokeError}
-    </div>
-  )}
-  {isRevoking && (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
-      <div className="bg-card-bg p-6 rounded-lg shadow-lg">
-        <div className="flex items-center gap-2">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-          <p className="text-text-primary">Revoking membership...</p>
-        </div>
-      </div>
-    </div>
-  )}
-  {revokeSuccess && (
-    <div className="mt-4 rounded bg-success/10 p-3 text-sm text-success">
-      {revokeSuccess}
-    </div>
-  )}
-      const supabase = await createClient();
-      const { error } = await supabase.rpc("firm_revoke_membership", {
-        p_membership_id: membershipId,
-      });
-
-      if (error) throw error;
-  // Add loading state for revocation
-  {isRevoking && (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
-      <div className="bg-card-bg p-6 rounded-lg shadow-lg">
-        <div className="flex items-center gap-2">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-          <p className="text-text-primary">Revoking membership...</p>
-        </div>
-      </div>
-    </div>
-  )}
-
-      setRevokeSuccess(`Successfully revoked ${pseudonym}'s access.`);
-
-      // Refresh the roster
-      const rosterRes = await fetch(`/api/firm/${orgId}/roster?sort=${sort}`, {
-        cache: "no-store"
-      });
-      if (!rosterRes.ok) {
-        throw new Error("Failed to refresh roster");
-      }
-      const roster = (await rosterRes.json()) as FirmCoachRosterResponse;
-      setData(roster);
-    } catch (err) {
-      setRevokeError(err instanceof Error ? err.message : "Failed to revoke membership");
-    } finally {
-      setIsRevoking(false);
-    }
-  };
                   </td>
+                </tr>
               ))}
             </tbody>
           </table>
