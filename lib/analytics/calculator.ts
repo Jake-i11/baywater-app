@@ -64,7 +64,7 @@ function isLoss(trade: AnalyticsTradeInput): boolean {
 }
 
 /** Bucket a numeric value into a labeled range. Returns the key, or 'Unknown'. */
-function bucketValue(
+export function bucketValue(
   value: number | null | undefined,
   buckets: Record<string, [number, number]>,
 ): string {
@@ -76,7 +76,7 @@ function bucketValue(
 }
 
 /** Get the time-of-day bucket key for an entry time string. */
-function getTimeBucket(entryTime: string | null | undefined): string {
+export function getTimeBucket(entryTime: string | null | undefined): string {
   if (!entryTime) return 'Unknown';
   const d = new Date(entryTime);
   if (isNaN(d.getTime())) return 'Unknown';
@@ -404,14 +404,14 @@ export function computeRuleAdherenceBreakdown(trades: AnalyticsTradeInput[]): Ru
 
   return {
     followedRules: {
+      ...computeDimension(clean),
       key: 'followed',
       label: 'Followed Rules (0 violations)',
-      ...computeDimension(clean),
     },
     violatedRules: {
+      ...computeDimension(violating),
       key: 'violated',
       label: 'Violated Rules (1+ violations)',
-      ...computeDimension(violating),
     },
   };
 }

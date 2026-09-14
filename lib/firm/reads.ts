@@ -54,7 +54,7 @@ function inJoinWindow(t: TradeRow, joinedAt: string): boolean {
   return tradeTimestamp(t) >= new Date(joinedAt);
 }
 
-async function listAuthorizedStudents(
+export async function listAuthorizedStudents(
   supabase: SupabaseClient,
   organizationId: string
 ): Promise<AuthorizedStudent[]> {

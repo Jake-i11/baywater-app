@@ -141,7 +141,7 @@ export async function GET(
         /** Decision quality with replay events — ONLY loaded at Level 3 */
         decision_quality: decisionQuality,
         /** Sanitized AI review — ONLY loaded at Level 3 */
-        ai_review,
+        ai_review: aiReview,
         /** Market enrichment fields */
         float_shares: tradeData.float_shares ?? null,
         market_cap: tradeData.market_cap ?? null,

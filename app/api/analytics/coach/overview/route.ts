@@ -79,14 +79,15 @@ export async function GET(request: NextRequest) {
         // exactly matching the student implementation (which also always sees empty tags).
       ].join(','))
       .in('user_id', userIds)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .returns<StudentRawTrade[]>();
 
     if (tradesError) {
       console.error('Firm analytics trades fetch error:', tradesError.message);
       return firmNoStoreJson({ error: 'Failed to load analytics' }, { status: 500 });
     }
 
-    const rawTrades = (tradesData || []) as StudentRawTrade[];
+    const rawTrades = tradesData || [];
 
     // Filter to join-window trades
     const joinedByUser = new Map(students.map(s => [s.student_user_id, s.joined_at]));

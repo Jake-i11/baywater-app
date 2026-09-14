@@ -74,14 +74,15 @@ export async function GET(request: NextRequest) {
         // exactly matching the student implementation (which also always sees empty tags).
       ].join(','))
       .eq('user_id', student.student_user_id)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .returns<StudentRawTrade[]>();
 
     if (tradesError) {
       console.error('Student analytics trades fetch error:', tradesError.message);
       return firmNoStoreJson({ error: 'Failed to load analytics' }, { status: 500 });
     }
 
-    const rawTrades = (tradesData || []) as StudentRawTrade[];
+    const rawTrades = tradesData || [];
 
     // Filter to join-window trades
     const tradeTimeThreshold = new Date(student.joined_at).getTime();
@@ -121,9 +122,10 @@ export async function GET(request: NextRequest) {
         // NOTE: 'behaviorTags' is intentionally NOT selected — same reason as above.
       ].join(','))
       .in('user_id', allUserIds)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .returns<StudentRawTrade[]>();
 
-    const allRawTrades = (allTradesData || []) as StudentRawTrade[];
+    const allRawTrades = allTradesData || [];
     // Filter firm trades to join-window using each student's joined_at
     const allWindowedFiltered = allRawTrades.filter(t => {
       const joined = joinedByUser.get(t.user_id);

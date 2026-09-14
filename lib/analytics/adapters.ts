@@ -19,9 +19,8 @@ import {
   RELATIVE_VOLUME_BUCKETS,
   DAY_VOLUME_BUCKETS,
   MARKET_CAP_BUCKETS,
-  getTimeBucket,
-  bucketValue,
 } from './types';
+import { getTimeBucket, bucketValue } from './calculator';
 
 // ─── Shared bucket helpers ─────────────────────────────────────────────────
 
@@ -43,6 +42,7 @@ function computePositionSize(entryPrice: number | null, size: number | null): nu
  */
 export interface StudentRawTrade {
   id: string;
+  user_id: string;
   ticker: string | null;
   realized_pl: string | null;
   entry_price: string | null;
@@ -59,6 +59,7 @@ export interface StudentRawTrade {
   float_shares?: number | null;
   market_cap?: number | null;
   relative_volume?: number | null;
+  day_volume?: number | null;
 }
 
 function parsePL(value: string | null | undefined): number | null {
@@ -138,6 +139,8 @@ export function adaptStudentTrade(raw: StudentRawTrade): AnalyticsTradeInput {
     setupType: null, // student path may not have setup_type; leave null → 'Unknown' in calculator
     violations,
     behaviorTags,
+    marketCap: raw.market_cap ?? null,
+    dayVolume: raw.day_volume ?? null,
     // Pre-compute buckets
     stockPriceBucket: bucketValue(entryPrice, STOCK_PRICE_BUCKETS),
     floatBucket: bucketValue(raw.float_shares ?? null, FLOAT_BUCKETS),
@@ -189,6 +192,7 @@ export interface CoachRawTrade {
   float_shares?: number | null;
   market_cap?: number | null;
   relative_volume?: number | null;
+  day_volume?: number | null;
   entry_price?: number | null;
   exit_price?: number | null;
 }
@@ -219,7 +223,7 @@ export function adaptCoachTrade(raw: CoachRawTrade): AnalyticsTradeInput {
     realizedPl,
     entryPrice,
     exitPrice,
-    size: Number.isFinite(size) && size > 0 ? size : null,
+    size: size != null && Number.isFinite(size) && size > 0 ? size : null,
     side,
     entryTime: raw.entry_time,
     exitTime: raw.exit_time,
@@ -228,6 +232,8 @@ export function adaptCoachTrade(raw: CoachRawTrade): AnalyticsTradeInput {
     setupType: raw.setup_type,
     violations: raw.violations || [],
     behaviorTags,
+    marketCap: raw.market_cap ?? null,
+    dayVolume: raw.day_volume ?? null,
     stockPriceBucket: bucketValue(entryPrice, STOCK_PRICE_BUCKETS),
     floatBucket: bucketValue(raw.float_shares ?? null, FLOAT_BUCKETS),
     relativeVolumeBucket: bucketValue(raw.relative_volume ?? null, RELATIVE_VOLUME_BUCKETS),

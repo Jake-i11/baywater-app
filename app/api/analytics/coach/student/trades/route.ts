@@ -15,6 +15,23 @@ import { createClient } from '@/lib/server';
 import { getCoachContext, firmNoStoreJson } from '@/lib/firm/context';
 import { listAuthorizedStudents } from '@/lib/firm/reads';
 
+/** Raw trade row shape matching the select columns in this route. */
+interface TradeRow {
+  id: string;
+  ticker: string | null;
+  side: string | null;
+  size: string | null;
+  realized_pl: number | null;
+  entry_price: number | null;
+  exit_price: number | null;
+  discipline_score: number | null;
+  setup_type: string | null;
+  entry_time: string | null;
+  exit_time: string | null;
+  created_at: string;
+  violations: string | string[] | null;
+}
+
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
@@ -63,7 +80,8 @@ export async function GET(request: NextRequest) {
         'violations',
       ].join(','))
       .eq('user_id', student.student_user_id)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .returns<TradeRow[]>();
 
     if (tradesError) {
       console.error('Student trades fetch error:', tradesError.message);
@@ -89,9 +107,9 @@ export async function GET(request: NextRequest) {
         ticker: t.ticker ?? null,
         side: t.side ?? null,
         size: t.size != null ? String(t.size) : null,
-        realized_pl: typeof t.realized_pl === 'number' ? t.realized_pl : (parseFloat(t.realized_pl as string) ?? null),
-        entry_price: typeof t.entry_price === 'number' ? t.entry_price : (parseFloat(t.entry_price as string) ?? null),
-        exit_price: typeof t.exit_price === 'number' ? t.exit_price : (parseFloat(t.exit_price as string) ?? null),
+        realized_pl: t.realized_pl != null ? (typeof t.realized_pl === 'number' ? t.realized_pl : parseFloat(String(t.realized_pl))) : null,
+        entry_price: t.entry_price != null ? (typeof t.entry_price === 'number' ? t.entry_price : parseFloat(String(t.entry_price))) : null,
+        exit_price: t.exit_price != null ? (typeof t.exit_price === 'number' ? t.exit_price : parseFloat(String(t.exit_price))) : null,
         discipline_score: t.discipline_score ?? null,
         setup_type: t.setup_type ?? null,
         entry_time: t.entry_time ?? null,

@@ -46,8 +46,6 @@ export interface AnalyticsTradeInput {
   relativeVolumeBucket: string;
   /** Market enrichment: day volume bucket key */
   dayVolumeBucket: string;
-  /** Market enrichment: market cap (raw value) */
-  marketCap: number | null;
   /** Market enrichment: market cap bucket key */
   marketCapBucket: string;
   /** Market enrichment: share size bucket key */

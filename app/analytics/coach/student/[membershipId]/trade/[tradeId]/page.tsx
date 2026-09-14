@@ -248,8 +248,8 @@ export default function CoachStudentTradeReplayPage({ params }: Props) {
     );
   }
 
-  const entryPrice = trade.entry_price;
-  const exitPrice = trade.exit_price;
+  const entryPrice = trade.entry_price ?? undefined;
+  const exitPrice = trade.exit_price ?? undefined;
 
   return (
     <div className="flex flex-col gap-6 min-h-screen bg-canvas">
@@ -350,8 +350,8 @@ export default function CoachStudentTradeReplayPage({ params }: Props) {
               ticker={trade.ticker || ''}
               entryPrice={entryPrice}
               exitPrice={exitPrice}
-              entryTime={trade.entry_time}
-              exitTime={trade.exit_time}
+              entryTime={trade.entry_time ?? undefined}
+              exitTime={trade.exit_time ?? undefined}
               isPlaying={isPlaying}
               playbackSpeed={playbackSpeed}
               currentEventIndex={currentEventIndex}
@@ -423,7 +423,7 @@ export default function CoachStudentTradeReplayPage({ params }: Props) {
             <CardTitle>AI Trade Replay</CardTitle>
           </CardHeader>
           <CardContent>
-            <AIReplay replayText={trade.ai_replay} entryTime={trade.entry_time} exitTime={trade.exit_time} />
+            <AIReplay replayText={trade.ai_replay || ''} entryTime={trade.entry_time || ''} exitTime={trade.exit_time || ''} />
           </CardContent>
         </Card>
       )}
