@@ -1,15 +1,9 @@
 /**
- * Invitation token helpers — raw token never persisted; only SHA-256 hash is stored.
+ * Invitation token helpers — browser-safe subset.
+ *
+ * Server-side token generation and hashing (node:crypto) live in
+ * lib/firm/tokens.server.ts; client code hashes tokens with Web Crypto here.
  */
-import { createHash, randomBytes } from "crypto";
-
-export function generateInvitationToken(): string {
-  return randomBytes(32).toString("base64url");
-}
-
-export function hashInvitationToken(rawToken: string): string {
-  return createHash("sha256").update(rawToken, "utf8").digest("hex");
-}
 
 /** Browser-safe SHA-256 hex digest of the raw invite token. */
 export async function hashInvitationTokenWeb(rawToken: string): Promise<string> {

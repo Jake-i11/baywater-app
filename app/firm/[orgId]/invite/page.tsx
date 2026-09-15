@@ -1,10 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { createClient } from "@/lib/server";
-import { getCoachContext } from "@/lib/firm/context";
-import { firmCreateInvitationWithToken } from "@/lib/firm/rpc";
 import { FirmCoachNav, FirmEmpty, FirmLoading } from "@/components/firm/FirmCoachShell";
 
 interface Invitation {
@@ -34,77 +31,62 @@ export default function FirmInvitePage() {
   const [isLoadingInvitations, setIsLoadingInvitations] = useState(true);
   const [invitationsError, setInvitationsError] = useState<string | null>(null);
 
+  const refreshInvitations = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/firm/${orgId}/invitations`, { cache: "no-store" });
+      if (res.status === 401) {
+        router.replace(`/login?next=/firm/${orgId}/invite`);
+        return;
+      }
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? "Failed to load invitations");
+      }
+      const body = (await res.json()) as { invitations: Invitation[] };
+      setInvitations(body.invitations ?? []);
+    } catch (err) {
+      setInvitationsError(err instanceof Error ? err.message : "Failed to load invitations");
+    } finally {
+      setIsLoadingInvitations(false);
+    }
+  }, [orgId, router]);
+
+  useEffect(() => {
+    refreshInvitations();
+  }, [refreshInvitations]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError(null);
 
     try {
-      const result = await getCoachContext(orgId);
-      if (!result.ok) {
-        throw new Error(result.error);
-      }
-
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7);
-
-      const inviteResult = await firmCreateInvitationWithToken({
-        organizationId: orgId,
-        role: formData.role,
-        email: formData.email,
-        expiresAt: expiresAt.toISOString(),
-        origin: window.location.origin,
+      const res = await fetch(`/api/firm/${orgId}/invitations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: formData.email, role: formData.role }),
       });
-
-      if (inviteResult.error) {
-        throw new Error(inviteResult.error.message);
+      if (res.status === 401) {
+        router.replace(`/login?next=/firm/${orgId}/invite`);
+        return;
       }
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? "Failed to create invitation");
+      }
+      const body = (await res.json()) as { inviteUrl: string | null };
 
-      setInviteUrl(inviteResult.data?.inviteUrl ?? null);
+      setInviteUrl(body.inviteUrl ?? null);
       setFormData({ email: "", role: "student" });
 
       // Refresh invitations after successful creation
-      const supabase = await createClient();
-      const { data, error } = await supabase
-        .from("invitations")
-        .select("id, email, role, status, created_at, expires_at")
-        .eq("organization_id", orgId)
-        .order("created_at", { ascending: false });
-
-      if (!error) setInvitations(data || []);
+      await refreshInvitations();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create invitation");
     } finally {
       setIsSubmitting(false);
     }
   };
-
-  useEffect(() => {
-    const fetchInvitations = async () => {
-      try {
-        const result = await getCoachContext(orgId);
-        if (!result.ok) {
-          throw new Error(result.error);
-        }
-
-        const supabase = await createClient();
-        const { data, error } = await supabase
-          .from("invitations")
-          .select("id, email, role, status, created_at, expires_at")
-          .eq("organization_id", orgId)
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-        setInvitations(data || []);
-      } catch (err) {
-        setInvitationsError(err instanceof Error ? err.message : "Failed to load invitations");
-      } finally {
-        setIsLoadingInvitations(false);
-      }
-    };
-
-    fetchInvitations();
-  }, [orgId]);
 
   const handleCopy = async () => {
     if (!inviteUrl) return;

@@ -11,8 +11,6 @@ import {
   formatCoachRate,
 } from "@/components/firm/FirmCoachShell";
 import type { FirmCoachRosterResponse } from "@/lib/firm/types";
-import { getCoachContext } from "@/lib/firm/context";
-import { firmRevokeMembership } from "@/lib/firm/rpc";
 
 export default function FirmRosterPage() {
   const params = useParams<{ orgId: string }>();
@@ -71,14 +69,18 @@ export default function FirmRosterPage() {
     setRevokeSuccess(null);
 
     try {
-      const result = await getCoachContext(orgId);
-      if (!result.ok) {
-        throw new Error(result.error);
+      const res = await fetch(
+        `/api/firm/${orgId}/memberships/${membershipId}/revoke`,
+        { method: "POST" }
+      );
+      if (res.status === 401) {
+        router.replace(`/login?next=/firm/${orgId}/roster`);
+        return;
       }
-
-      const { error } = await firmRevokeMembership(membershipId);
-
-      if (error) throw error;
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? "Failed to revoke membership");
+      }
 
       setRevokeSuccess(`Successfully revoked ${pseudonym}'s access.`);
 

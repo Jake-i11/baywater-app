@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { firmCreateOrganization } from '@/lib/firm/rpc';
+import { firmCreateOrganization } from '@/lib/firm/rpc.server';
 import { getCoachContext } from '@/lib/firm/context';
 
 async function createOrganization(formData: FormData): Promise<void> {

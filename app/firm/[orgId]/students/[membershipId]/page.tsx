@@ -11,9 +11,6 @@ import {
   formatCoachRate,
 } from "@/components/firm/FirmCoachShell";
 import type { FirmCoachStudentDetailResponse } from "@/lib/firm/types";
-import { createClient } from "@/lib/server";
-import { firmAssignCoachStudent } from "@/lib/firm/rpc";
-import { getCoachContext } from "@/lib/firm/context";
 
 export default function FirmStudentDetailPage() {
   const params = useParams<{ orgId: string; membershipId: string }>();
@@ -61,37 +58,16 @@ export default function FirmStudentDetailPage() {
   useEffect(() => {
     const fetchCoaches = async () => {
       try {
-        const result = await getCoachContext(orgId);
-        if (!result.ok) {
-          throw new Error(result.error);
+        const res = await fetch(`/api/firm/${orgId}/coaches`, { cache: "no-store" });
+        if (res.status === 401) {
+          router.replace(`/login?next=/firm/${orgId}/students/${membershipId}`);
+          return;
         }
-
-        const supabase = await createClient();
-        const { data, error } = await supabase
-          .from("organization_memberships")
-          .select("id, user_id")
-          .eq("organization_id", orgId)
-          .eq("role", "coach")
-          .eq("status", "active");
-
-        if (error) throw error;
-
-        // Get pseudonyms for these coaches
-        const coachIds = data.map((m) => m.user_id);
-        const { data: pseudonyms, error: pseudoError } = await supabase
-          .from("organization_memberships")
-          .select("id, pseudonym")
-          .in("user_id", coachIds)
-          .eq("organization_id", orgId);
-
-        if (pseudoError) throw pseudoError;
-
-        setCoaches(
-          data.map((m) => ({
-            id: m.id,
-            pseudonym: pseudonyms.find((p) => p.id === m.id)?.pseudonym || "Coach",
-          }))
-        );
+        if (!res.ok) {
+          throw new Error("Failed to fetch coaches");
+        }
+        const body = (await res.json()) as { coaches: { id: string; pseudonym: string }[] };
+        setCoaches(body.coaches ?? []);
       } catch (err) {
         console.error("Failed to fetch coaches:", err);
       }
@@ -100,7 +76,7 @@ export default function FirmStudentDetailPage() {
     if (orgId) {
       fetchCoaches();
     }
-  }, [orgId]);
+  }, [orgId, membershipId, router]);
 
   const handleAssign = async () => {
     if (!selectedCoach) return;
@@ -110,18 +86,19 @@ export default function FirmStudentDetailPage() {
     setAssignSuccess(null);
 
     try {
-      const result = await getCoachContext(orgId);
-      if (!result.ok) {
-        throw new Error(result.error);
-      }
-
-      const { error } = await firmAssignCoachStudent({
-        organizationId: orgId,
-        coachMembershipId: selectedCoach,
-        studentMembershipId: membershipId,
+      const res = await fetch(`/api/firm/${orgId}/students/${membershipId}/assign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ coachMembershipId: selectedCoach }),
       });
-
-      if (error) throw error;
+      if (res.status === 401) {
+        router.replace(`/login?next=/firm/${orgId}/students/${membershipId}`);
+        return;
+      }
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? "Failed to assign student");
+      }
 
       setAssignSuccess("Successfully assigned student to coach.");
     } catch (err) {

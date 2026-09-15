@@ -22,6 +22,20 @@ import type {
   FirmCoachStudentTrade,
 } from "@/lib/firm/types";
 
+export type CoachInvitationRow = {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  created_at: string;
+  expires_at: string;
+};
+
+export type CoachOption = {
+  id: string;
+  pseudonym: string;
+};
+
 type AuthorizedStudent = {
   membership_id: string;
   student_user_id: string;
@@ -199,6 +213,60 @@ export async function buildCoachRoster(
   });
 
   return { organization_id: organizationId, students: rows, sort };
+}
+
+/**
+ * Pending invitations for the org picker / invite page.
+ * Explicit column list — token_hash is intentionally never selected.
+ */
+export async function listCoachInvitations(
+  supabase: SupabaseClient,
+  organizationId: string
+): Promise<CoachInvitationRow[]> {
+  const { data, error } = await supabase
+    .from("invitations")
+    .select("id, email, role, status, created_at, expires_at")
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as CoachInvitationRow[];
+}
+
+/**
+ * Active coaches in an organization with their pseudonyms.
+ * Used by the assign-student picker; falls back to membership id as label.
+ */
+export async function listOrgCoaches(
+  supabase: SupabaseClient,
+  organizationId: string
+): Promise<CoachOption[]> {
+  const { data: memberships, error: membershipError } = await supabase
+    .from("organization_memberships")
+    .select("id, user_id")
+    .eq("organization_id", organizationId)
+    .eq("role", "coach")
+    .eq("status", "active");
+  if (membershipError) throw membershipError;
+
+  const rows = (memberships ?? []) as Array<{ id: string; user_id: string }>;
+  if (rows.length === 0) return [];
+
+  const coachIds = rows.map((m) => m.user_id);
+  const { data: pseudonyms, error: pseudonymError } = await supabase
+    .from("organization_memberships")
+    .select("id, pseudonym")
+    .in("user_id", coachIds)
+    .eq("organization_id", organizationId);
+  if (pseudonymError) throw pseudonymError;
+
+  const pseudonymById = new Map(
+    ((pseudonyms ?? []) as Array<{ id: string; pseudonym: string | null }>).map((p) => [p.id, p.pseudonym])
+  );
+
+  return rows.map((m) => ({
+    id: m.id,
+    pseudonym: pseudonymById.get(m.id) || "Coach",
+  }));
 }
 
 export async function buildCoachPerformance(
