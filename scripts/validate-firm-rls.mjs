@@ -104,11 +104,11 @@ async function main() {
   `);
 
   const foundationSql = fs.readFileSync(
-    path.join(migrationsDir, "20260907_create_firm_foundation_tables.sql"),
+    path.join(migrationsDir, "20260907000001_create_firm_foundation_tables.sql"),
     "utf8"
   );
   const rlsSql = fs.readFileSync(
-    path.join(migrationsDir, "20260907_firm_rls_policies_and_trades_access.sql"),
+    path.join(migrationsDir, "20260907000002_firm_rls_policies_and_trades_access.sql"),
     "utf8"
   );
 

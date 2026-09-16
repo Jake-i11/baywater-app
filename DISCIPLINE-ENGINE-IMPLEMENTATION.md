@@ -28,9 +28,9 @@ This document summarizes the implementation of Baywater's new AI-Powered Context
 - `lib/discipline-utils.ts` - Integration utilities and database functions
 
 ### Database Schema
-- `supabase/migrations/20260707_create_discipline_violations_table.sql`
-- `supabase/migrations/20260707_create_discipline_scores_table.sql`
-- `supabase/migrations/20260707_create_behavior_patterns_table.sql`
+- `supabase/migrations/20260707000004_create_discipline_violations_table.sql`
+- `supabase/migrations/20260707000005_create_discipline_scores_table.sql`
+- `supabase/migrations/20260707000002_create_behavior_patterns_table.sql`
 
 ### Testing
 - `test-discipline-engine.ts` - Comprehensive test script

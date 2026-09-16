@@ -32,7 +32,7 @@ async function main() {
 
   const migrationPath = path.join(
     __dirname,
-    "../supabase/migrations/20260907_create_firm_foundation_tables.sql"
+    "../supabase/migrations/20260907000001_create_firm_foundation_tables.sql"
   );
   const sql = fs.readFileSync(migrationPath, "utf8");
 

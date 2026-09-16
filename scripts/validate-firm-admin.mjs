@@ -129,11 +129,11 @@ async function main() {
 
   try {
     for (const f of [
-      "20260907_create_firm_foundation_tables.sql",
-      "20260907_firm_rls_policies_and_trades_access.sql",
-      "20260907_firm_invitation_lifecycle.sql",
-      "20260907_firm_coach_read_helpers.sql",
-      "20260915_add_global_admin.sql",
+      "20260907000001_create_firm_foundation_tables.sql",
+      "20260907000002_firm_rls_policies_and_trades_access.sql",
+      "20260907000003_firm_invitation_lifecycle.sql",
+      "20260907000004_firm_coach_read_helpers.sql",
+      "20260915000001_add_global_admin.sql",
     ]) {
       await db.exec(fs.readFileSync(path.join(migrationsDir, f), "utf8"));
     }
@@ -829,11 +829,11 @@ async function main() {
   let failureMessage = "";
   try {
     for (const f of [
-      "20260907_create_firm_foundation_tables.sql",
-      "20260907_firm_rls_policies_and_trades_access.sql",
-      "20260907_firm_invitation_lifecycle.sql",
-      "20260907_firm_coach_read_helpers.sql",
-      "20260915_add_global_admin.sql",
+      "20260907000001_create_firm_foundation_tables.sql",
+      "20260907000002_firm_rls_policies_and_trades_access.sql",
+      "20260907000003_firm_invitation_lifecycle.sql",
+      "20260907000004_firm_coach_read_helpers.sql",
+      "20260915000001_add_global_admin.sql",
     ]) {
       await fresh.exec(fs.readFileSync(path.join(migrationsDir, f), "utf8"));
     }

@@ -4,7 +4,7 @@
 
 
 -- ######################################################################
--- SOURCE: supabase/migrations/20260907_create_firm_foundation_tables.sql
+-- SOURCE: supabase/migrations/20260907000001_create_firm_foundation_tables.sql
 -- ######################################################################
 
 -- Firm / Coach foundation: organizations, memberships, assignments,
@@ -272,7 +272,7 @@ ALTER TABLE pseudonym_labels FORCE ROW LEVEL SECURITY;
 ALTER TABLE audit_log FORCE ROW LEVEL SECURITY;
 
 -- ######################################################################
--- SOURCE: supabase/migrations/20260907_firm_rls_policies_and_trades_access.sql
+-- SOURCE: supabase/migrations/20260907000002_firm_rls_policies_and_trades_access.sql
 -- ######################################################################
 
 -- Firm RLS policies, trusted write RPCs, and additive coach SELECT on trades.
@@ -852,7 +852,7 @@ BEGIN
 END $$;
 
 -- ######################################################################
--- SOURCE: supabase/migrations/20260907_firm_invitation_lifecycle.sql
+-- SOURCE: supabase/migrations/20260907000003_firm_invitation_lifecycle.sql
 -- ######################################################################
 
 -- Invitation & membership lifecycle RPCs (accept, decline, revoke, preview).
@@ -1250,7 +1250,7 @@ COMMENT ON FUNCTION firm_revoke_membership(UUID) IS
   'Active coach revokes another member; removes coach trade authorization immediately';
 
 -- ######################################################################
--- SOURCE: supabase/migrations/20260907_firm_coach_read_helpers.sql
+-- SOURCE: supabase/migrations/20260907000004_firm_coach_read_helpers.sql
 -- ######################################################################
 
 -- Firm coach read helpers (authorized student list).
