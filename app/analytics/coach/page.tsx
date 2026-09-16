@@ -118,8 +118,10 @@ export default function CoachAnalyticsPage() {
         setError('Not authorized');
         return;
       }
-      const ctx = await ctxRes.json() as { ok: boolean; organizations: { organization_id: string; organization_name: string }[] };
-      if (!ctx.ok || ctx.organizations.length === 0) {
+      const ctx = await ctxRes.json() as {
+        organizations?: { organization_id: string; organization_name: string }[];
+      };
+      if (!ctx.organizations || ctx.organizations.length === 0) {
         setError('No organizations found');
         return;
       }

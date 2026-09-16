@@ -2,14 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
-const tabs = [
+const baseTabs = [
   { href: "", label: "Overview" },
   { href: "/roster", label: "Roster" },
   { href: "/performance", label: "Performance" },
-  { href: "/invite", label: "Invite" },
 ];
+
+// Global-admin-only tab. Visibility is UX only — the Coaches API/page enforce
+// global-admin authorization server-side.
+const adminTab = { href: "/coaches", label: "Coaches" };
+const inviteTab = { href: "/invite", label: "Invite" };
 
 export function FirmCoachNav({
   orgId,
@@ -22,6 +26,45 @@ export function FirmCoachNav({
 }) {
   const pathname = usePathname();
   const base = `/firm/${orgId}`;
+  const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
+  const [isMember, setIsMember] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch("/api/firm/context", { cache: "no-store" });
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          is_global_admin?: boolean;
+          organizations?: Array<{ organization_id: string }>;
+        };
+        const member = (body.organizations ?? []).some(
+          (o) => o.organization_id === orgId
+        );
+        if (!cancelled) {
+          setIsGlobalAdmin(Boolean(body.is_global_admin));
+          setIsMember(member);
+        }
+      } catch {
+        // Leave the nav at coach level; server still enforces admin access.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId]);
+
+  // Coach tabs only for a coach of this firm; the Coaches and Invite tabs are
+  // also shown to the single global admin (who is not a member of any firm but
+  // manages coaches and invitations across firms).
+  const tabs = [
+    ...(isMember ? baseTabs : []),
+    ...(isGlobalAdmin ? [adminTab] : []),
+    ...(isMember || isGlobalAdmin ? [inviteTab] : []),
+  ];
 
   return (
     <div className="flex flex-col gap-6">

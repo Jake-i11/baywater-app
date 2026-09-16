@@ -67,6 +67,20 @@ export async function firmCreateOrganization(supabase: SupabaseClient, name: str
 }
 
 /**
+ * Delete a firm and every row it owns. GLOBAL ADMIN ONLY — enforced inside the
+ * firm_delete_organization SECURITY DEFINER RPC (a coach calling this directly
+ * receives the generic not-found denial).
+ */
+export async function firmDeleteOrganization(
+  supabase: SupabaseClient,
+  organizationId: string
+) {
+  return supabase.rpc("firm_delete_organization", {
+    p_organization_id: organizationId,
+  });
+}
+
+/**
  * Generate a raw invite token, store only its SHA-256 hash via firm_create_invitation,
  * and return the raw token once for the shareable link.
  *

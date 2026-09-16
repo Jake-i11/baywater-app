@@ -18,7 +18,6 @@ export default function FirmStudentDetailPage() {
   const { orgId, membershipId } = params;
   const [data, setData] = useState<FirmCoachStudentDetailResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [coaches, setCoaches] = useState<{ id: string; pseudonym: string }[]>([]);
   const [selectedCoach, setSelectedCoach] = useState<string>("");
   const [isAssigning, setIsAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
@@ -53,29 +52,6 @@ export default function FirmStudentDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [orgId, membershipId, router]);
-
-  useEffect(() => {
-    const fetchCoaches = async () => {
-      try {
-        const res = await fetch(`/api/firm/${orgId}/coaches`, { cache: "no-store" });
-        if (res.status === 401) {
-          router.replace(`/login?next=/firm/${orgId}/students/${membershipId}`);
-          return;
-        }
-        if (!res.ok) {
-          throw new Error("Failed to fetch coaches");
-        }
-        const body = (await res.json()) as { coaches: { id: string; pseudonym: string }[] };
-        setCoaches(body.coaches ?? []);
-      } catch (err) {
-        console.error("Failed to fetch coaches:", err);
-      }
-    };
-
-    if (orgId) {
-      fetchCoaches();
-    }
   }, [orgId, membershipId, router]);
 
   const handleAssign = async () => {
@@ -197,7 +173,7 @@ export default function FirmStudentDetailPage() {
         </div>
       )}
 
-      {coaches.length > 1 && (
+      {data.assignable_coaches.length > 1 && (
         <div className="rounded-lg border border-card-border bg-card-bg p-6">
           <h3 className="text-lg font-medium text-text-primary">Assign to Coach</h3>
           <div className="mt-4">
@@ -211,7 +187,7 @@ export default function FirmStudentDetailPage() {
               className="mt-1 block w-full rounded border border-card-border bg-card-bg p-2 text-sm text-text-primary"
             >
               <option value="">Select a coach</option>
-              {coaches.map((coach) => (
+              {data.assignable_coaches.map((coach) => (
                 <option key={coach.id} value={coach.id}>
                   {coach.pseudonym}
                 </option>

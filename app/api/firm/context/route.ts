@@ -11,6 +11,7 @@ export async function GET() {
   }
   return firmNoStoreJson({
     user_id: ctx.context.user_id,
+    is_global_admin: ctx.context.is_global_admin,
     organizations: ctx.context.organizations,
   });
 }

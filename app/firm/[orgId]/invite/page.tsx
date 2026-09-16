@@ -30,6 +30,9 @@ export default function FirmInvitePage() {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [isLoadingInvitations, setIsLoadingInvitations] = useState(true);
   const [invitationsError, setInvitationsError] = useState<string | null>(null);
+  // Coach invitations are global-admin-only. This flag only controls the UI —
+  // the API and the firm_create_invitation RPC enforce it server-side.
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const refreshInvitations = useCallback(async () => {
     try {
@@ -54,6 +57,25 @@ export default function FirmInvitePage() {
   useEffect(() => {
     refreshInvitations();
   }, [refreshInvitations]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch("/api/firm/context", { cache: "no-store" });
+        if (!res.ok) return;
+        const body = (await res.json()) as { is_global_admin?: boolean };
+        if (!cancelled) setIsAdmin(Boolean(body.is_global_admin));
+      } catch {
+        // Leave coach-level UI; the API still rejects coach invitations.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -197,18 +219,25 @@ export default function FirmInvitePage() {
                 />
                 Student
               </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="role"
-                  value="coach"
-                  checked={formData.role === "coach"}
-                  onChange={() => setFormData({ ...formData, role: "coach" })}
-                  className="h-4 w-4 text-accent focus:ring-accent"
-                />
-                Coach
-              </label>
+              {isAdmin && (
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="role"
+                    value="coach"
+                    checked={formData.role === "coach"}
+                    onChange={() => setFormData({ ...formData, role: "coach" })}
+                    className="h-4 w-4 text-accent focus:ring-accent"
+                  />
+                  Coach
+                </label>
+              )}
             </div>
+            {!isAdmin && (
+              <p className="mt-2 text-xs text-text-muted">
+                Only the Baywater global admin can invite coaches.
+              </p>
+            )}
           </div>
           {error && (
             <div className="mt-4 rounded bg-destructive/10 p-3 text-sm text-destructive">

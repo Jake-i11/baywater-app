@@ -34,6 +34,19 @@ export type CoachInvitationRow = {
 export type CoachOption = {
   id: string;
   pseudonym: string;
+  role?: "coach" | "admin";
+  joined_at?: string;
+};
+
+type CoachListRow = {
+  membership_id: string;
+  joined_at: string;
+  pseudonym: string;
+};
+
+type AssignableCoachRow = {
+  membership_id: string;
+  pseudonym: string;
 };
 
 type AuthorizedStudent = {
@@ -233,39 +246,47 @@ export async function listCoachInvitations(
 }
 
 /**
- * Active coaches in an organization with their pseudonyms.
- * Used by the assign-student picker; falls back to membership id as label.
+ * Active coaches in an organization (global-admin-only RPC).
+ *
+ * The previous implementation tried to select `pseudonym` directly from
+ * organization_memberships, which has no such column (labels live in
+ * pseudonym_labels). Reads now go through the firm_coach_list RPC, which
+ * resolves the safe label and enforces global-admin authorization.
  */
 export async function listOrgCoaches(
   supabase: SupabaseClient,
   organizationId: string
 ): Promise<CoachOption[]> {
-  const { data: memberships, error: membershipError } = await supabase
-    .from("organization_memberships")
-    .select("id, user_id")
-    .eq("organization_id", organizationId)
-    .eq("role", "coach")
-    .eq("status", "active");
-  if (membershipError) throw membershipError;
+  const { data, error } = await supabase.rpc("firm_coach_list", {
+    p_organization_id: organizationId,
+  });
+  if (error) throw error;
 
-  const rows = (memberships ?? []) as Array<{ id: string; user_id: string }>;
-  if (rows.length === 0) return [];
+  return ((data ?? []) as CoachListRow[]).map((row) => ({
+    id: row.membership_id,
+    pseudonym: row.pseudonym,
+    role: "coach" as const,
+    joined_at: row.joined_at,
+  }));
+}
 
-  const coachIds = rows.map((m) => m.user_id);
-  const { data: pseudonyms, error: pseudonymError } = await supabase
-    .from("organization_memberships")
-    .select("id, pseudonym")
-    .in("user_id", coachIds)
-    .eq("organization_id", organizationId);
-  if (pseudonymError) throw pseudonymError;
+/**
+ * Active coaches of the organization, used by the assignment picker. Available
+ * to an active coach of the firm and to the global admin (firm_assignable_coaches).
+ */
+export async function listAssignableCoaches(
+  supabase: SupabaseClient,
+  organizationId: string
+): Promise<CoachOption[]> {
+  const { data, error } = await supabase.rpc("firm_assignable_coaches", {
+    p_organization_id: organizationId,
+  });
+  if (error) throw error;
 
-  const pseudonymById = new Map(
-    ((pseudonyms ?? []) as Array<{ id: string; pseudonym: string | null }>).map((p) => [p.id, p.pseudonym])
-  );
-
-  return rows.map((m) => ({
-    id: m.id,
-    pseudonym: pseudonymById.get(m.id) || "Coach",
+  return ((data ?? []) as AssignableCoachRow[]).map((row) => ({
+    id: row.membership_id,
+    pseudonym: row.pseudonym,
+    role: "coach" as const,
   }));
 }
 
@@ -327,6 +348,7 @@ export async function buildCoachStudentDetail(
     joined_at: student.joined_at,
     metrics: aggregateTradeMetrics(trades),
     trades: detailTrades,
+    assignable_coaches: await listAssignableCoaches(supabase, organizationId),
     screenshots_included: false,
   };
 }
