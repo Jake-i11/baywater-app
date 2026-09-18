@@ -30,6 +30,58 @@ type CoachMembershipRow = {
   joined_at: string;
 };
 
+type StudentMembershipRow = {
+  id: string;
+  organization_id: string;
+  joined_at: string;
+};
+
+/**
+ * Organization as seen by a STUDENT (joined via accepted invitations only).
+ * Mirrors FirmCoachOrgSummary so the /firm listing can render rows identically
+ * without exposing coach-only surfaces (invite links, coach management).
+ */
+export type FirmStudentOrgSummary = {
+  organization_id: string;
+  organization_name: string;
+  membership_id: string;
+  joined_at: string;
+};
+
+/**
+ * True when the AUTHENTICATED caller currently holds an ACTIVE student
+ * membership in any organization. This is the system's only reliable
+ * per-user student signal — roles live per-membership in
+ * organization_memberships, and creation is what makes a coach.
+ *
+ * Reads the caller's own rows through RLS (organization_memberships_select_own),
+ * so it can never be satisfied by client-supplied data.
+ */
+export async function isActiveStudentAnywhere(): Promise<boolean> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) return false;
+
+  const { data, error } = await supabase
+    .from("organization_memberships")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("role", "student")
+    .eq("status", "active")
+    .limit(1);
+
+  if (error) {
+    // Fail closed: unreadable membership state must not grant creation.
+    console.error("isActiveStudentAnywhere error:", error.message);
+    return true;
+  }
+  return (data ?? []).length > 0;
+}
+
 /** True when the authenticated caller holds the single global admin row. */
 export async function isGlobalAdminUser(): Promise<boolean> {
   const supabase = await createClient();
@@ -59,6 +111,44 @@ export async function listAdminOrganizations(): Promise<FirmAdminOrgSummary[]> {
   const { data, error } = await supabase.rpc("firm_admin_list_organizations");
   if (error) throw error;
   return (data ?? []) as FirmAdminOrgSummary[];
+}
+
+/**
+ * Student-facing firm list: ONLY organizations where the authenticated user
+ * holds an ACTIVE student membership (joined via accepted invitations).
+ * RLS (organizations_select_active_member) scopes the join server-side, so no
+ * unaffiliated organization can leak into the result regardless of inputs.
+ */
+export async function getStudentOrganizations(): Promise<FirmStudentOrgSummary[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) return [];
+
+  const { data, error } = await supabase
+    .from("organization_memberships")
+    .select("id, organization_id, joined_at, organizations!inner(id, name)")
+    .eq("user_id", user.id)
+    .eq("role", "student")
+    .eq("status", "active");
+
+  if (error) {
+    console.error("getStudentOrganizations error:", error.message);
+    return [];
+  }
+
+  return ((data ?? []) as Array<
+    StudentMembershipRow & { organizations: { id: string; name: string }[] }
+  >)
+    .map((row) => ({
+      organization_id: row.organization_id,
+      organization_name: row.organizations[0]?.name ?? "",
+      membership_id: row.id,
+      joined_at: row.joined_at,
+    }));
 }
 
 /**

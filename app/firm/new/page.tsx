@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { firmCreateOrganization } from '@/lib/firm/rpc.server';
-import { getCoachContext } from '@/lib/firm/context';
+import { getCoachContext, isActiveStudentAnywhere } from '@/lib/firm/context';
 
 async function createOrganization(formData: FormData): Promise<void> {
   'use server'
@@ -9,6 +9,14 @@ async function createOrganization(formData: FormData): Promise<void> {
   
   if (!name || name.trim() === '') {
     throw new Error('Organization name is required');
+  }
+
+  // Server-side authorization for the Firm creation flow: students can never
+  // create organizations. Checked against the authenticated session's own
+  // membership rows (never a client-provided role); the firm_create_organization
+  // RPC enforces the same rule again inside the database.
+  if (await isActiveStudentAnywhere()) {
+    throw new Error('Students cannot create organizations');
   }
   
   const result = await firmCreateOrganization(name);
@@ -25,6 +33,18 @@ export default async function NewOrganizationPage() {
   
   if (!result.ok) {
     redirect('/login');
+  }
+
+  // Students must not reach this page (they can never create organizations).
+  // The matching check inside the server action and the creation RPC covers
+  // direct POSTs and direct RPC calls.
+  if (await isActiveStudentAnywhere()) {
+    return (
+      <div className="container mx-auto p-4">
+        <h1 className="text-2xl font-bold mb-4">Create New Organization</h1>
+        <p className="text-sm text-gray-500">Students cannot create organizations.</p>
+      </div>
+    );
   }
   
   return (

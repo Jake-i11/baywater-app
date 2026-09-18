@@ -4,7 +4,8 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Home, BarChart3, FileText, BookOpen, TrendingUp, Play, User, GraduationCap, Menu, Plus } from "lucide-react"
 import { Button } from "./ui/button"
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { supabase } from "@/lib/supabase"
 
 const navItems = [
   { name: "Dashboard", href: "/dashboard", icon: Home },
@@ -14,14 +15,54 @@ const navItems = [
   { name: "Analytics", href: "/analytics", icon: TrendingUp },
   { name: "Replay", href: "/replay", icon: Play },
   { name: "Firm", href: "/firm", icon: GraduationCap },
-  { name: "Create Organization", href: "/firm/new", icon: Plus },
   { name: "Profile", href: "/profile", icon: User },
   { name: "Home", href: "/", icon: Home },
+]
+
+/** Global-organization-management nav entry — the single Baywater admin only. */
+const globalAdminNavItems = [
+  { name: "Create Organization", href: "/firm/new", icon: Plus },
 ]
 
 export function Sidebar() {
   const pathname = usePathname()
   const [isCollapsed, setIsCollapsed] = useState(false)
+
+  // Global organization management is reserved for the single Baywater admin
+  // account. The check reads the caller's OWN admin row through RLS
+  // (baywater_admins_select_own), so it can never be spoofed from the client;
+  // the creation RPCs enforce the same rule server-side. Fails closed: any
+  // error or missing session simply hides the entry.
+  const [isGlobalAdmin, setIsGlobalAdmin] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser()
+        if (cancelled) return
+        if (authError || !user) {
+          setIsGlobalAdmin(false)
+          return
+        }
+        const { data, error } = await supabase
+          .from("baywater_admins")
+          .select("user_id")
+          .eq("user_id", user.id)
+          .maybeSingle()
+        if (cancelled) return
+        setIsGlobalAdmin(!error && Boolean(data))
+      } catch {
+        if (!cancelled) setIsGlobalAdmin(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Check if user has coach role (placeholder - implement actual role check)
   const hasCoachRole = false // Replace with actual role check
@@ -84,6 +125,27 @@ export function Sidebar() {
               </li>
             )
           })}
+
+          {/* Global-organization-management entries — visible only to the
+              single global admin (see isGlobalAdmin above). */}
+          {isGlobalAdmin &&
+            globalAdminNavItems.map((item) => {
+              const isActive = pathname === item.href
+              return (
+                <li key={item.name}>
+                  <Link
+                    href={item.href}
+                    className={`flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${isActive ? 'bg-accent-tint text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-neutral-fill'}`}
+                  >
+                    <item.icon className={`w-5 h-5 ${isActive ? 'text-accent' : 'text-text-muted'}`} />
+                    {!isCollapsed && item.name}
+                    {isActive && !isCollapsed && (
+                      <div className="ml-auto w-1 h-6 bg-accent rounded-full" />
+                    )}
+                  </Link>
+                </li>
+              )
+            })}
 
           {/* Legacy placeholder link to student AI-coach page — kept separate from Firm */}
           {hasCoachRole && (
