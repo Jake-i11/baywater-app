@@ -296,30 +296,24 @@ export async function saveTradesToSupabase(trades: TradeData[], userId: string, 
 
      setTrades(updatedTrades)
 
-     // [PIPELINE] Post-insert processing: Fetch chart data and generate AI reviews.
-     // This is best-effort — a chart/Alpaca/AI failure must never make the trade
-     // save look like it failed, since the insert already succeeded above.
-     console.log("[PIPELINE] Starting post-insert processing for", data.length, "trades");
-
-     try {
-       // Process trades sequentially to avoid overwhelming APIs
-       for (let i = 0; i < data.length; i++) {
-         const tradeWithId = updatedTrades[i];
-
-         if (tradeWithId?.id) {
-           // Fetch chart data for this trade
-           await fetchAndSaveChartData(tradeWithId, i, data.length);
-
-           // Trigger AI review generation
-           await triggerAIReviewGeneration(tradeWithId);
+     // Fire off post-insert processing in the background — never block the caller.
+     // The DB insert is already done and trades are saved; chart/AI failures are
+     // logged but do not affect the user's ability to see their trade.
+     console.log("[PIPELINE] Starting post-insert processing for", data.length, "trades (background)");
+     void (async () => {
+       try {
+         for (let i = 0; i < data.length; i++) {
+           const tradeWithId = updatedTrades[i];
+           if (tradeWithId?.id) {
+             await fetchAndSaveChartData(tradeWithId, i, data.length);
+             await triggerAIReviewGeneration(tradeWithId);
+           }
          }
+       } catch (postInsertError) {
+         console.error("[PIPELINE] Post-insert processing failed (trades are still saved):", postInsertError);
        }
-     } catch (postInsertError) {
-       // Trades are already saved — chart/AI failures are logged, not fatal
-       console.error("[PIPELINE] Post-insert processing failed (trades are still saved):", postInsertError);
-     }
-
-     console.log("[PIPELINE] Post-insert processing completed");
+       console.log("[PIPELINE] Post-insert processing completed");
+     })();
    }
 
    return data

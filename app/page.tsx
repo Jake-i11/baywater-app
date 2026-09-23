@@ -27,11 +27,11 @@ export default function Home() {
       className="relative min-h-screen overflow-hidden text-white"
       style={{
         // Neutral gray gradient
-        background: 'linear-gradient(135deg, #374151 0%, #1f2937 40%, #4b5563 100%)',
+        background: 'linear-gradient(135deg, #9ca3af 0%, #6b7280 40%, #d1d5db 100%)',
         backgroundImage: `
-          linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-          linear-gradient(135deg, #374151 0%, #1f2937 40%, #4b5563 100%)
+          linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+          linear-gradient(135deg, #9ca3af 0%, #6b7280 40%, #d1d5db 100%)
         `,
         backgroundSize: '40px 40px, 40px 40px, 100% 100%',
       }}

@@ -18,6 +18,7 @@ import { fetchOrGenerateAIReview } from "@/lib/analyze/aiPipeline"
 import { saveTradesToSupabase } from "@/lib/analyze/supabaseTradeInsert"
 import { parseCSVContent } from "@/lib/analyze/csvParser"
 import { checkRules } from "@/lib/analyze/tradeValidation"
+import { loadUserRules } from "@/lib/rules"
 import {
   computeHoldTime,
   computePLValue,
@@ -221,7 +222,7 @@ export default function AnalyzePage() {
             ticker: trade.ticker,
             price: entryPrice ? parseFloat(entryPrice) : undefined,
             time: entryTime
-          })
+          }, loadUserRules())
           tradeViolations = checkDangerousWin(tradeViolations, realizedPl)
           const violationCost = calculateViolationCost(tradeViolations, realizedPl)
           const disciplineScore = calculateDisciplineScore(tradeViolations)
@@ -370,7 +371,7 @@ export default function AnalyzePage() {
             ticker: tradeData.ticker,
             price: tradeData.entry ? parseFloat(tradeData.entry) : undefined,
             time: tradeData.time
-          })
+          }, loadUserRules())
           tradeViolations = checkDangerousWin(tradeViolations, realizedPl)
           const violationCost = calculateViolationCost(tradeViolations, realizedPl)
           const disciplineScore = calculateDisciplineScore(tradeViolations)

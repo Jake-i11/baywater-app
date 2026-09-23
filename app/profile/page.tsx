@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
-import { User, ShieldCheck, TrendingUp, BarChart3, Target, Calendar, Award, Star, Trash2 } from "lucide-react"
+import { User, ShieldCheck, TrendingUp, BarChart3, Target, Calendar, Award, Star, Trash2, Plus } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatPL, formatNumber } from "@/lib/utils"
+import { loadUserRules, saveUserRules } from "@/lib/rules"
+import type { UserRule } from "@/lib/rules"
 import Link from "next/link"
 
 function calculateConsistencyScore(trades: Trade[]): number {
@@ -152,9 +154,46 @@ export default function ProfilePage() {
   const [resetError, setResetError] = useState<string | null>(null)
   const [resetSuccess, setResetSuccess] = useState<string | null>(null)
 
+  // Rules management
+  const [rules, setRules] = useState<UserRule[]>([])
+  const [showAddRule, setShowAddRule] = useState(false)
+  const [newRuleName, setNewRuleName] = useState("")
+  const [newRuleDescription, setNewRuleDescription] = useState("")
+
   useEffect(() => {
     fetchProfileData()
+    setRules(loadUserRules())
   }, [])
+
+  function toggleRule(id: string) {
+    const updated = rules.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r)
+    setRules(updated)
+    saveUserRules(updated)
+  }
+
+  function deleteRule(id: string) {
+    const updated = rules.filter(r => r.id !== id)
+    setRules(updated)
+    saveUserRules(updated)
+  }
+
+  function handleAddRule() {
+    if (!newRuleName.trim()) return
+    const newRule: UserRule = {
+      id: `rule_${Date.now()}`,
+      name: newRuleName.trim(),
+      description: newRuleDescription.trim(),
+      enabled: true,
+      type: 'custom',
+      config: {}
+    }
+    const updated = [...rules, newRule]
+    setRules(updated)
+    saveUserRules(updated)
+    setNewRuleName("")
+    setNewRuleDescription("")
+    setShowAddRule(false)
+  }
 
   async function fetchProfileData() {
     try {
@@ -500,6 +539,110 @@ console.error("Profile fetch error JSON:", JSON.stringify(profileError, null, 2)
         </Card>
       </div>
 
+      {/* Trading Rules */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-text-primary">Trading Rules</h2>
+          <button
+            onClick={() => setShowAddRule(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-lg text-sm hover:bg-accent/90 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add Rule
+          </button>
+        </div>
+
+        {rules.length === 0 ? (
+          <Card>
+            <CardContent className="p-6 text-center">
+              <ShieldCheck className="w-10 h-10 text-text-muted mx-auto mb-3" />
+              <h3 className="font-medium text-text-primary mb-1">No rules configured</h3>
+              <p className="text-sm text-text-muted mb-4">
+                Add rules to track rule compliance and discipline streak across your trades.
+              </p>
+              <button
+                onClick={() => setShowAddRule(true)}
+                className="px-4 py-2 bg-accent text-white rounded-lg text-sm hover:bg-accent/90 transition-colors"
+              >
+                Add your first rule
+              </button>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {rules.map((rule) => (
+              <Card key={rule.id}>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => toggleRule(rule.id)}
+                        className={`relative w-10 h-5 rounded-full transition-colors ${rule.enabled ? 'bg-accent-green' : 'bg-neutral-fill'}`}
+                      >
+                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transform transition-transform ${rule.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                      </button>
+                      <div>
+                        <div className="font-medium text-text-primary">{rule.name}</div>
+                        {rule.description && <div className="text-sm text-text-muted">{rule.description}</div>}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => deleteRule(rule.id)}
+                      className="p-2 hover:text-loss-red transition-colors text-text-muted"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {showAddRule && (
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <h3 className="font-medium text-text-primary">New Rule</h3>
+              <div>
+                <label className="text-xs text-text-muted uppercase tracking-wider">Rule Name *</label>
+                <input
+                  value={newRuleName}
+                  onChange={e => setNewRuleName(e.target.value)}
+                  placeholder="e.g. No trading before 9:30 AM"
+                  className="mt-1 w-full px-3 py-2 border border-card-border rounded-lg bg-card-bg text-text-primary text-sm"
+                  onKeyDown={e => { if (e.key === 'Enter') handleAddRule() }}
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-xs text-text-muted uppercase tracking-wider">Description (optional)</label>
+                <input
+                  value={newRuleDescription}
+                  onChange={e => setNewRuleDescription(e.target.value)}
+                  placeholder="Explain what this rule enforces"
+                  className="mt-1 w-full px-3 py-2 border border-card-border rounded-lg bg-card-bg text-text-primary text-sm"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleAddRule}
+                  disabled={!newRuleName.trim()}
+                  className="px-4 py-2 bg-accent text-white rounded-lg text-sm hover:bg-accent/90 disabled:opacity-50 transition-colors"
+                >
+                  Add Rule
+                </button>
+                <button
+                  onClick={() => { setShowAddRule(false); setNewRuleName(""); setNewRuleDescription("") }}
+                  className="px-4 py-2 border border-card-border rounded-lg text-sm hover:bg-neutral-fill transition-colors text-text-primary"
+                >
+                  Cancel
+                </button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
       {/* Performance Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Performance by Week */}
@@ -672,18 +815,6 @@ console.error("Profile fetch error JSON:", JSON.stringify(profileError, null, 2)
                       <div className={`text-lg font-bold tabular-nums ${isProfitable ? 'text-profit-green' : 'text-loss-red'}`}>
                         {formatPL(trade.realized_pl)}
                       </div>
-                    </div>
-
-                    {/* Mini chart placeholder */}
-                    <div className="h-20 bg-neutral-fill rounded-lg mb-3 flex items-end justify-center overflow-hidden">
-                      <svg className="w-full h-full" viewBox="0 0 200 60">
-                        <path
-                          d={`M 0 ${60 - (entryPrice % 60)} L 100 ${60 - (exitPrice % 60)}`}
-                          stroke={isProfitable ? "#1DA97F" : "#E5484D"}
-                          strokeWidth="2"
-                          fill="none"
-                        />
-                      </svg>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-xs mb-3">

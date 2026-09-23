@@ -5,20 +5,32 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-/**
- * Format P&L value with proper currency formatting and color indicators
- */
-export function formatPL(value: string | null | undefined): string {
-  if (value === null || value === undefined || value === 'null') return "\u2014"
-  const num = parseFloat(value)
-  if (isNaN(num)) return "\u2014"
-  const sign = num >= 0 ? "+" : ""
-  return `${sign}$${num.toFixed(2)}`
+/** P&L with sign and thousands separators: +$1,234.56 or -$1,234.56 */
+export function formatPL(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === 'null') return "—"
+  const num = typeof value === 'number' ? value : parseFloat(String(value))
+  if (isNaN(num)) return "—"
+  const abs = Math.abs(num).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  if (num >= 0) return `+$${abs}`
+  return `-$${abs}`
 }
 
-/**
- * Format number with commas for thousands
- */
+/** Currency without sign: $1,234.56 */
+export function formatCurrency(value: number): string {
+  return `$${Math.abs(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+/** Integer or decimal with thousands separators */
 export function formatNumber(num: number): string {
   return num.toLocaleString("en-US")
+}
+
+/** Percentage: 12.3% */
+export function formatPercent(num: number, decimals = 1): string {
+  return `${num.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}%`
+}
+
+/** Ratio: 1.84 */
+export function formatRatio(num: number, decimals = 2): string {
+  return num.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 }

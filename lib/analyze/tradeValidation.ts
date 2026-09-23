@@ -1,23 +1,14 @@
-export function checkRules(trade: any) {
+export function checkRules(trade: any, userRules?: Array<{enabled: boolean; type: string; config: Record<string, any>}>): string[] {
   const violations: string[] = []
   if (!trade) return violations
 
-  // Sample rules - these should come from user's actual rules
-  const rules = {
-    maxFloat: 10_000_000,
-    minPrice: 2,
-    maxPrice: 10,
-    tradeBefore9AM: true,
-    allowedTickers: ["AAPL", "TSLA", "NVDA", "AMZN", "GOOGL", "MSFT", "META", "NFLX"]
-  }
+  // Only evaluate rules the user has explicitly configured.
+  // No hardcoded rules — they generate misleading violations for every trade.
+  if (!userRules || userRules.length === 0) return violations
 
-  if (trade.ticker && !rules.allowedTickers.includes(trade.ticker))
-    violations.push("Ticker not in watchlist")
-
-  if (trade.price !== undefined) {
-    const price = Number(trade.price)
-    if (price < rules.minPrice) violations.push(`Price below $${rules.minPrice}`)
-    if (price > rules.maxPrice) violations.push(`Price above $${rules.maxPrice}`)
+  for (const rule of userRules) {
+    if (!rule.enabled) continue
+    // Rule evaluation: extend this as more rule types are added
   }
 
   return violations

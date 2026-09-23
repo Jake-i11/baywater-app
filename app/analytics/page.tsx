@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
 import { TrendingUp, TrendingDown, BarChart3, PieChart, Calendar, Clock, Target } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { formatPL, formatNumber } from "@/lib/utils"
+import { formatPL, formatNumber, formatPercent } from "@/lib/utils"
 import Link from "next/link"
 
 interface Trade {
@@ -145,10 +145,8 @@ export default function AnalyticsPage() {
     ? losingTrades.reduce((sum, trade) => sum + Math.abs(getPL(trade) || 0), 0) / losingTrades.length
     : null
 
-  const expectancy = hasData
-    ? ((avgWin || 0) * (winningTrades.length / filteredTrades.length)) -
-      ((avgLoss || 0) * (losingTrades.length / filteredTrades.length))
-    : null
+  const avgTradePL = hasData ? totalPL / filteredTrades.length : null
+  const riskReward = avgWin !== null && avgLoss !== null && avgLoss > 0 ? avgWin / avgLoss : null
 
   // ── Compliance rate: % of trades with no violations (null when no trades) ──
   const complianceRate = hasData
@@ -228,6 +226,7 @@ export default function AnalyticsPage() {
     if (bucket) bucket.pl += pl
   })
   const maxWeekPL = Math.max(0, ...weekBuckets.map(b => Math.abs(b.pl)))
+  const weekHasData = weekBuckets.some(b => b.pl !== 0)
 
   // ── Performance by hour: 9:00-20:00, real P&L by entry hour ──
   const hourBuckets: { hour: number; pl: number }[] =
@@ -240,6 +239,7 @@ export default function AnalyticsPage() {
     if (bucket) bucket.pl += pl
   })
   const maxHourPL = Math.max(0, ...hourBuckets.map(b => Math.abs(b.pl)))
+  const hourHasData = hourBuckets.some(b => b.pl !== 0)
 
   // Calculate performance by strategy/setup
   const strategyPerformance: Record<string, { count: number; totalPL: number }> = {}
@@ -315,16 +315,18 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
 
-        <Card sentiment={profitFactor !== null && profitFactor >= 1.5 ? "profit" : profitFactor !== null && profitFactor >= 1 ? "neutral" : "loss"}>
+        <Card sentiment={riskReward !== null && riskReward >= 1 ? "profit" : riskReward !== null ? "loss" : "neutral"}>
           <CardHeader>
-            <CardTitle className="text-sm font-medium uppercase tracking-wider text-text-muted">Profit Factor</CardTitle>
+            <CardTitle className="text-sm font-medium uppercase tracking-wider text-text-muted">Risk / Reward</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {profitFactor !== null ? profitFactor.toFixed(2) : "—"}
+              {riskReward !== null ? `${riskReward.toFixed(2)}R` : "—"}
             </div>
             <div className="text-xs text-text-muted mt-1">
-              {hasData ? `$${grossWins.toFixed(0)} / $${grossLosses.toFixed(0)}` : "—"}
+              {hasData && avgWin !== null && avgLoss !== null
+                ? `Avg win $${avgWin.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2})} / avg loss $${avgLoss.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+                : "—"}
             </div>
           </CardContent>
         </Card>
@@ -335,21 +337,21 @@ export default function AnalyticsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-lg font-bold text-profit-green">
-              {avgWin !== null ? `+$${avgWin.toFixed(2)}` : "—"}
+              {avgWin !== null ? formatPL(avgWin) : "—"}
             </div>
             <div className="text-lg font-bold text-loss-red">
-              {avgLoss !== null ? `-$${avgLoss.toFixed(2)}` : "—"}
+              {avgLoss !== null ? `-$${avgLoss.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : "—"}
             </div>
           </CardContent>
         </Card>
 
-        <Card sentiment="neutral">
+        <Card sentiment={avgTradePL !== null && avgTradePL >= 0 ? "profit" : avgTradePL !== null ? "loss" : "neutral"}>
           <CardHeader>
-            <CardTitle className="text-sm font-medium uppercase tracking-wider text-text-muted">Expectancy</CardTitle>
+            <CardTitle className="text-sm font-medium uppercase tracking-wider text-text-muted">Avg. Trade P&amp;L</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {expectancy !== null ? expectancy.toFixed(2) : "—"}
+              {avgTradePL !== null ? formatPL(avgTradePL) : "—"}
             </div>
             <div className="text-xs text-text-muted mt-1">
               Per trade
@@ -369,7 +371,7 @@ export default function AnalyticsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {hasData ? (
+            {weekHasData ? (
               <div className="h-64 flex items-end gap-1">
                 {weekBuckets.map((bucket) => {
                   const height = maxWeekPL > 0 ? (Math.abs(bucket.pl) / maxWeekPL) * 100 : 0
@@ -391,7 +393,9 @@ export default function AnalyticsPage() {
               </div>
             ) : (
               <div className="h-64 flex items-center justify-center">
-                <p className="text-text-muted">No data yet</p>
+                <p className="text-text-muted">
+                  {filteredTrades.length === 0 ? "No trades yet" : "No P&L data for this period"}
+                </p>
               </div>
             )}
           </CardContent>
@@ -406,7 +410,7 @@ export default function AnalyticsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {hasData ? (
+            {hourHasData ? (
               <div className="h-64 flex items-end gap-1">
                 {hourBuckets.map((bucket) => {
                   const height = maxHourPL > 0 ? (Math.abs(bucket.pl) / maxHourPL) * 100 : 0
@@ -428,7 +432,9 @@ export default function AnalyticsPage() {
               </div>
             ) : (
               <div className="h-64 flex items-center justify-center">
-                <p className="text-text-muted">No data yet</p>
+                <p className="text-text-muted">
+                  {filteredTrades.length === 0 ? "No trades yet" : "No P&L data for this period"}
+                </p>
               </div>
             )}
           </CardContent>
