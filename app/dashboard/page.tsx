@@ -6,6 +6,7 @@ import { TrendingUp, BarChart3, ShieldCheck, Plus, Upload, ArrowUp, ArrowDown } 
 import { Card, CardContent } from "@/components/ui/card"
 import { formatPL, formatNumber, formatPercent } from "@/lib/utils"
 import { loadUserRules } from "@/lib/rules"
+import type { UserRule } from "@/lib/rules"
 import Link from "next/link"
 import "./styles.css"
 
@@ -68,14 +69,19 @@ export default function DashboardPage() {
     try {
       setLoading(true)
 
-      const { data: tradesData, error: tradesError } = await supabase
-        .from('trades')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100)
+      const [tradesResult, rules] = await Promise.all([
+        supabase
+          .from('trades')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(100),
+        loadUserRules(),
+      ])
+
+      const { data: tradesData, error: tradesError } = tradesResult
 
       if (tradesError) {
-        console.error("Error fetching trades:", tradesError)
+        console.error("Error fetching trades:", { message: tradesError.message, code: tradesError.code })
         return
       }
 
@@ -87,7 +93,7 @@ export default function DashboardPage() {
         }))
 
         setRecentTrades(normalizedTrades.slice(0, 6))
-        setStats(calculateDashboardStats(normalizedTrades))
+        setStats(calculateDashboardStats(normalizedTrades, rules))
       }
     } catch (error) {
       console.error("Error fetching dashboard data:", error)
@@ -96,9 +102,8 @@ export default function DashboardPage() {
     }
   }
 
-  function calculateDashboardStats(trades: Trade[]): DashboardStats {
-    const userRules = loadUserRules()
-    const hasRules = userRules.filter(r => r.enabled).length > 0
+  function calculateDashboardStats(trades: Trade[], loadedRules: UserRule[]): DashboardStats {
+    const hasRules = loadedRules.filter(r => r.enabled).length > 0
 
     if (trades.length === 0) {
       return {

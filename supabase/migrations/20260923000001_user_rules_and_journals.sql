@@ -38,7 +38,4 @@ CREATE POLICY "Users can manage their own journals"
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
--- Add journal_id to journal_entries (nullable — NULL means the entry is in no named journal)
-ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS journal_id UUID REFERENCES journals(id) ON DELETE SET NULL;
-
-CREATE INDEX IF NOT EXISTS idx_journal_entries_journal_id ON journal_entries(journal_id);
+-- journal_id is added to journal_entries by migration 20260923000002 which creates that table.

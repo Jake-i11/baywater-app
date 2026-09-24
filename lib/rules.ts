@@ -1,5 +1,4 @@
-// User-configurable trading rules, stored in localStorage.
-// Will be migrated to Supabase user_rules table when migration is applied.
+import { supabase } from './supabase'
 
 export interface UserRule {
   id: string
@@ -7,32 +6,77 @@ export interface UserRule {
   description: string
   enabled: boolean
   type: 'max_daily_trades' | 'max_position_size' | 'allowed_tickers' | 'no_trade_after_time' | 'max_daily_loss' | 'custom'
-  config: Record<string, any>
+  config: Record<string, unknown>
+  created_at?: string
+  updated_at?: string
 }
 
-const RULES_KEY = 'baywater_user_rules'
+export async function loadUserRules(): Promise<UserRule[]> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return []
 
-export function loadUserRules(): UserRule[] {
-  if (typeof window === 'undefined') return []
-  try {
-    const stored = localStorage.getItem(RULES_KEY)
-    if (!stored) return []
-    const parsed = JSON.parse(stored)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
+  const { data, error } = await supabase
+    .from('user_rules')
+    .select('*')
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    console.error('Error loading user rules:', { message: error.message, code: error.code })
     return []
   }
+
+  return (data ?? []) as UserRule[]
 }
 
-export function saveUserRules(rules: UserRule[]): void {
-  if (typeof window === 'undefined') return
-  try {
-    localStorage.setItem(RULES_KEY, JSON.stringify(rules))
-  } catch {
-    console.error('Failed to save user rules')
+export async function createRule(
+  partial: Omit<UserRule, 'id' | 'created_at' | 'updated_at'>
+): Promise<UserRule | null> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+
+  const { data, error } = await supabase
+    .from('user_rules')
+    .insert({ ...partial, user_id: user.id })
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Error creating rule:', { message: error.message, code: error.code })
+    return null
   }
+
+  return data as UserRule
 }
 
-export function createRule(partial: Omit<UserRule, 'id'>): UserRule {
-  return { ...partial, id: `rule_${Date.now()}_${Math.random().toString(36).slice(2)}` }
+export async function updateRule(
+  id: string,
+  updates: Partial<Omit<UserRule, 'id' | 'created_at'>>
+): Promise<UserRule | null> {
+  const { data, error } = await supabase
+    .from('user_rules')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Error updating rule:', { message: error.message, code: error.code })
+    return null
+  }
+
+  return data as UserRule
+}
+
+export async function deleteRule(id: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('user_rules')
+    .delete()
+    .eq('id', id)
+
+  if (error) {
+    console.error('Error deleting rule:', { message: error.message, code: error.code })
+    return false
+  }
+
+  return true
 }

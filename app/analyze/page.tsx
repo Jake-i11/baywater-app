@@ -211,6 +211,7 @@ export default function AnalyzePage() {
         }
 
         // Build TradeData[] with local violations/display info
+        const rulesForValidation = await loadUserRules()
         const tradeList: TradeData[] = parsedTrades.map((trade: any, idx: number) => {
           const entryPrice = trade.entry_price || trade.price || null
           const exitPrice = trade.exit_price || null
@@ -222,7 +223,7 @@ export default function AnalyzePage() {
             ticker: trade.ticker,
             price: entryPrice ? parseFloat(entryPrice) : undefined,
             time: entryTime
-          }, loadUserRules())
+          }, rulesForValidation)
           tradeViolations = checkDangerousWin(tradeViolations, realizedPl)
           const violationCost = calculateViolationCost(tradeViolations, realizedPl)
           const disciplineScore = calculateDisciplineScore(tradeViolations)
@@ -367,11 +368,12 @@ export default function AnalyzePage() {
 
           // Compute violations/discipline the same way the CSV path does
           const realizedPl = tradeData.realized_pl ? parseFloat(tradeData.realized_pl) : null
+          const screenshotRules = await loadUserRules()
           let tradeViolations = checkRules({
             ticker: tradeData.ticker,
             price: tradeData.entry ? parseFloat(tradeData.entry) : undefined,
             time: tradeData.time
-          }, loadUserRules())
+          }, screenshotRules)
           tradeViolations = checkDangerousWin(tradeViolations, realizedPl)
           const violationCost = calculateViolationCost(tradeViolations, realizedPl)
           const disciplineScore = calculateDisciplineScore(tradeViolations)

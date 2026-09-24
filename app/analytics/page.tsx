@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
-import { TrendingUp, TrendingDown, BarChart3, PieChart, Calendar, Clock, Target } from "lucide-react"
+import { TrendingUp, TrendingDown, BarChart3, Calendar, Clock } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatPL, formatNumber, formatPercent } from "@/lib/utils"
 import Link from "next/link"
@@ -241,18 +241,6 @@ export default function AnalyticsPage() {
   const maxHourPL = Math.max(0, ...hourBuckets.map(b => Math.abs(b.pl)))
   const hourHasData = hourBuckets.some(b => b.pl !== 0)
 
-  // Calculate performance by strategy/setup
-  const strategyPerformance: Record<string, { count: number; totalPL: number }> = {}
-  filteredTrades.forEach(trade => {
-    (trade.behaviorTags ?? []).forEach(tag => {
-      if (!strategyPerformance[tag]) {
-        strategyPerformance[tag] = { count: 0, totalPL: 0 }
-      }
-      strategyPerformance[tag].count++
-      strategyPerformance[tag].totalPL += getPL(trade) || 0
-    })
-  })
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -439,38 +427,6 @@ export default function AnalyticsPage() {
             )}
           </CardContent>
         </Card>
-      </div>
-
-      {/* Strategy Performance */}
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold text-text-primary">Strategy Performance</h2>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Object.entries(strategyPerformance).map(([strategy, data]) => (
-            <Card key={strategy}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-sm font-medium text-text-primary">{strategy}</div>
-                  <div className={`text-sm font-bold ${data.totalPL > 0 ? 'text-profit-green' : 'text-loss-red'}`}>
-                    {formatPL(data.totalPL.toString())}
-                  </div>
-                </div>
-
-                <div className="w-full bg-neutral-fill rounded-full h-2 mb-2">
-                  <div
-                    className={`h-2 rounded-full ${data.totalPL > 0 ? 'bg-profit-green' : 'bg-loss-red'}`}
-                    style={{ width: `${Math.min(100, Math.abs(data.totalPL) / 100)}%` }}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between text-xs text-text-muted">
-                  <span>{data.count} trades</span>
-                  <span>{(data.totalPL / data.count).toFixed(2)} avg</span>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
       </div>
 
       {/* Behavioral Trends */}
