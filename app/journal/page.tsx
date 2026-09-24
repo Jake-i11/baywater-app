@@ -17,7 +17,7 @@ interface Trade {
   realized_pl: string | null
   entry_price: string | null
   exit_price: string | null
-  side: string
+  direction: string
   created_at: string
 }
 
@@ -120,7 +120,7 @@ export default function JournalPage() {
 
       const query = supabase
         .from('journal_entries')
-        .select('*, trade:trades(id, ticker, realized_pl, entry_price, exit_price, side, created_at)')
+        .select('*, trade:trades(id, ticker, realized_pl, entry_price, exit_price, direction, created_at)')
         .order('created_at', { ascending: false })
 
       if (selectedJournalId) {
@@ -176,7 +176,7 @@ export default function JournalPage() {
   const fetchTrades = useCallback(async () => {
     const { data } = await supabase
       .from('trades')
-      .select('id, ticker, realized_pl, entry_price, exit_price, side, created_at')
+      .select('id, ticker, realized_pl, entry_price, exit_price, direction, created_at')
       .order('created_at', { ascending: false })
       .limit(50)
     setAvailableTrades(data ?? [])
@@ -336,7 +336,7 @@ export default function JournalPage() {
         trade_id: createTradeId || null,
         journal_id: selectedJournalId || null,
       })
-      .select('*, trade:trades(id, ticker, realized_pl, entry_price, exit_price, side, created_at)')
+      .select('*, trade:trades(id, ticker, realized_pl, entry_price, exit_price, direction, created_at)')
       .single()
 
     if (insertError) {
@@ -795,8 +795,8 @@ export default function JournalPage() {
                     <div className="text-lg font-semibold text-text-primary truncate">{editTitle || "Untitled Entry"}</div>
                   )}
                   {selectedEntry.trade && (
-                    <span className={`shrink-0 px-2 py-1 rounded-full text-xs font-medium ${selectedEntry.trade.side === 'SHORT' ? 'bg-loss-tint text-loss-red' : 'bg-profit-tint text-profit-green'}`}>
-                      {selectedEntry.trade.side} {selectedEntry.trade.ticker}
+                    <span className={`shrink-0 px-2 py-1 rounded-full text-xs font-medium ${selectedEntry.trade.direction === 'SHORT' ? 'bg-loss-tint text-loss-red' : 'bg-profit-tint text-profit-green'}`}>
+                      {selectedEntry.trade.direction} {selectedEntry.trade.ticker}
                     </span>
                   )}
                 </div>
