@@ -62,7 +62,7 @@ export default function OnboardingPage() {
     );
   }
 
-  // Shared background style matching Baywater's dark glassmorphism
+  // Shared background style matching Precept Solutions' dark glassmorphism
   const bgStyle = {
     background: 'linear-gradient(135deg, #0a1a0f 0%, #07120a 40%, #0c1f14 100%)',
     backgroundImage: `
@@ -75,7 +75,7 @@ export default function OnboardingPage() {
 
   return (
     <div className="relative min-h-screen overflow-hidden text-white" style={bgStyle}>
-      {/* Background orbs - matching Baywater style */}
+      {/* Background orbs - matching Precept Solutions style */}
       <div className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute -top-48 left-[8%] h-[500px] w-[500px] rounded-full bg-blue-500 opacity-20 blur-[120px]" />
         <div className="absolute -bottom-48 right-[8%] h-[500px] w-[500px] rounded-full bg-purple-500 opacity-20 blur-[140px]" />
@@ -87,7 +87,7 @@ export default function OnboardingPage() {
         <div className="mb-8 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-6 w-6 text-emerald-400" />
-            <span className="font-semibold">Baywater</span>
+            <span className="font-semibold">Precept Solutions</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-white/60">Step {step} of 5</span>
@@ -119,7 +119,7 @@ export default function OnboardingPage() {
                   Most trading journals tell you if you won or lost.
                 </p>
                 <p className="text-white/60">
-                  Baywater analyzes whether your decision-making process was good, even when the outcome was lucky or unlucky.
+                  Precept Solutions analyzes whether your decision-making process was good, even when the outcome was lucky or unlucky.
                 </p>
               </div>
 
@@ -221,7 +221,7 @@ export default function OnboardingPage() {
 
               <div className="space-y-4">
                 <p className="text-white/80">
-                  Baywater identifies trades where you broke your rules but happened to make money.
+                  Precept Solutions identifies trades where you broke your rules but happened to make money.
                 </p>
                 <p className="text-white/60">
                   These are dangerous wins because they reinforce bad habits.
@@ -278,7 +278,7 @@ export default function OnboardingPage() {
 
               <div className="space-y-4">
                 <p className="text-white/80">
-                  Baywater calculates the dollar impact of breaking your rules.
+                  Precept Solutions calculates the dollar impact of breaking your rules.
                 </p>
                 <p className="text-white/60">
                   Not just how many mistakes you made. How much those mistakes cost.
@@ -333,7 +333,7 @@ export default function OnboardingPage() {
 
               <div className="space-y-4">
                 <p className="text-white/80">
-                  Upload your trades and Baywater will analyze your execution, discipline, and patterns.
+                  Upload your trades and Precept Solutions will analyze your execution, discipline, and patterns.
                 </p>
                 <p className="text-white/60">
                   Discover what you're actually good at, not just what made money.

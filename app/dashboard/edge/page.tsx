@@ -103,7 +103,7 @@ export default function EdgeDashboard() {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-green-600">
             <ShieldCheck className="h-4 w-4 text-white" />
           </div>
-          <span className="text-lg font-semibold">Baywater</span>
+          <span className="text-lg font-semibold">Precept Solutions</span>
         </Link>
         <div className="flex items-center gap-4">
           <Link href="/dashboard" className="text-sm text-white/70 hover:text-white">

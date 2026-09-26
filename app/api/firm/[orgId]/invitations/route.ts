@@ -97,7 +97,7 @@ export async function POST(
   // (firm_create_invitation) enforces the same rule independently.
   if (parsed.role === "coach" && !access.context.is_global_admin) {
     return firmNoStoreJson(
-      { error: "Only the Baywater global admin can invite coaches" },
+      { error: "Only the Precept Solutions global admin can invite coaches" },
       { status: 403 }
     );
   }

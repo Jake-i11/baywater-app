@@ -89,7 +89,7 @@ export default function LoginPage() {
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600">
             <ShieldCheck className="h-5 w-5 text-white" />
           </div>
-          <h1 className="text-2xl font-bold">Baywater</h1>
+          <h1 className="text-2xl font-bold">Precept Solutions</h1>
           <p className="text-sm text-white/50">
             {isSignUp ? "Create an account to save your trades" : "Welcome back"}
           </p>

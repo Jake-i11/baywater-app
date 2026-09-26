@@ -10,7 +10,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Baywater - AI Trading Journal",
+  title: "Precept Solutions - AI Trading Journal",
   description: "AI-powered trading journal and behavioral analytics platform",
 };
 

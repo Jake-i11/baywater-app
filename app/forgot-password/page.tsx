@@ -46,7 +46,7 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <AuthShell title="Baywater" subtitle="Reset your password">
+    <AuthShell title="Precept Solutions" subtitle="Reset your password">
       <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
         <CardHeader>
           <CardTitle className="text-base">

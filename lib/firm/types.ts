@@ -14,7 +14,7 @@ export type FirmCoachOrgSummary = {
 
 export type FirmCoachContext = {
   user_id: string;
-  /** True only for the single global Baywater admin account (not a firm role). */
+  /** True only for the single global Precept Solutions admin account (not a firm role). */
   is_global_admin: boolean;
   organizations: FirmCoachOrgSummary[];
   /** Organization in scope for the current request (when orgId provided and authorized). */

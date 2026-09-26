@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { Flame, ShieldCheck, Star } from "lucide-react";
+import { ModeToggle } from "@/components/ModeToggle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,12 +27,12 @@ export default function Home() {
     <div
       className="relative min-h-screen overflow-hidden text-white"
       style={{
-        // Neutral gray gradient
-        background: 'linear-gradient(135deg, #9ca3af 0%, #6b7280 40%, #d1d5db 100%)',
+        // Neutral gray gradient (darkened)
+        background: 'linear-gradient(135deg, #303947 0%, #1b2430 40%, #424b57 100%)',
         backgroundImage: `
-          linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-          linear-gradient(135deg, #9ca3af 0%, #6b7280 40%, #d1d5db 100%)
+          linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          linear-gradient(135deg, #303947 0%, #1b2430 40%, #424b57 100%)
         `,
         backgroundSize: '40px 40px, 40px 40px, 100% 100%',
       }}
@@ -49,16 +50,11 @@ export default function Home() {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-green-600">
             <ShieldCheck className="h-4 w-4 text-white" />
           </div>
-          <span className="text-lg font-semibold">Baywater</span>
+          <span className="text-lg font-semibold">Precept Solutions</span>
         </div>
 
-        <div className="hidden rounded-full border border-white/10 bg-white/5 p-1 sm:flex">
-          <button className="rounded-full bg-white/10 px-5 py-1.5 text-sm font-medium text-white">
-            Trader
-          </button>
-          <button className="rounded-full px-5 py-1.5 text-sm font-medium text-white/50">
-            Firm
-          </button>
+        <div className="hidden sm:block">
+          <ModeToggle theme="dark" />
         </div>
 
         <div className="flex items-center gap-4">
@@ -157,7 +153,7 @@ export default function Home() {
       <div className="relative z-10 mx-auto max-w-2xl px-6 pb-20">
         {!user && (
           <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-3 text-sm text-emerald-300">
-            You&apos;re using Baywater as a guest — trades won&apos;t be saved.{" "}
+            You&apos;re using Precept Solutions as a guest — trades won&apos;t be saved.{" "}
             <a
               href="/login"
               className="font-semibold text-emerald-400 underline underline-offset-2 hover:text-white"

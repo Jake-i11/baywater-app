@@ -9,11 +9,17 @@ import {
 } from '@/lib/firm/context';
 import type { FirmAdminOrgSummary, FirmCoachOrgSummary } from '@/lib/firm/types';
 import type { FirmStudentOrgSummary } from '@/lib/firm/context';
+import { ModeToggle } from '@/components/ModeToggle';
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">{title}</h1>
+      {/* Firm side of the Trader ⇄ Firm switch, so this page links back to the
+          trader home page as well as being reachable from it. */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold">{title}</h1>
+        <ModeToggle theme="light" />
+      </div>
       <div className="space-y-4">{children}</div>
     </div>
   );
@@ -24,7 +30,7 @@ function AdminFirms({ organizations }: { organizations: FirmAdminOrgSummary[] })
   return (
     <Shell title="Manage firms (global admin)">
       <p className="text-sm text-gray-500">
-        You are the Baywater global admin. Select a firm to manage its coaches.
+        You are the Precept Solutions global admin. Select a firm to manage its coaches.
       </p>
       {organizations.length === 0 ? (
         <p className="text-sm text-gray-500">No firms exist yet.</p>
@@ -113,7 +119,9 @@ async function FirmDirectory() {
     // only the global admin may still see a directory.
     const admin = await isGlobalAdminUser();
     if (!admin) {
-      redirect('/login');
+      // Preserve the destination so "Firm" from the home page returns here
+      // after signing in (same convention as app/firm/[orgId]/layout.tsx).
+      redirect(`/login?next=${encodeURIComponent('/firm')}`);
     }
     return <AdminFirms organizations={await listAdminOrganizations()} />;
   }

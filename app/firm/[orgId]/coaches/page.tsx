@@ -203,7 +203,7 @@ export default function FirmCoachesPage() {
         >
           <h2 className="text-lg font-medium text-text-primary">Invite a coach</h2>
           <p className="mt-1 text-sm text-text-muted">
-            As the Baywater global admin, you can invite and revoke coaches across
+            As the Precept Solutions global admin, you can invite and revoke coaches across
             firms. The recipient signs in with this email address to accept and
             become a coach.
           </p>

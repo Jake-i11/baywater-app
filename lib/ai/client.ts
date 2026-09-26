@@ -26,7 +26,7 @@ console.log("OPENROUTER KEY EXISTS:", !!process.env.OPENROUTER_API_KEY);
     // OpenRouter requires headers to identify the application
     defaultHeaders: {
       'HTTP-Referer': process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost:3000',
-      'X-Title': 'Baywater Trading App',
+      'X-Title': 'Precept Solutions Trading App',
     },
     // Note: OpenRouter uses standard OpenAI API format
     // Response format is controlled per-request

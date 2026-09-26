@@ -235,7 +235,7 @@ export default function FirmInvitePage() {
             </div>
             {!isAdmin && (
               <p className="mt-2 text-xs text-text-muted">
-                Only the Baywater global admin can invite coaches.
+                Only the Precept Solutions global admin can invite coaches.
               </p>
             )}
           </div>

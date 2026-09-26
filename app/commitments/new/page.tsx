@@ -194,7 +194,7 @@ export default function NewCommitmentPage() {
     }
   }
 
-  // Shared background style matching Baywater's dark glassmorphism
+  // Shared background style matching Precept Solutions' dark glassmorphism
   const bgStyle = {
     background: 'linear-gradient(135deg, #0a1a0f 0%, #07120a 40%, #0c1f14 100%)',
     backgroundImage: `
@@ -232,7 +232,7 @@ export default function NewCommitmentPage() {
 
   return (
     <div className="relative min-h-screen overflow-hidden text-white" style={bgStyle}>
-      {/* Background orbs - matching Baywater style */}
+      {/* Background orbs - matching Precept Solutions style */}
       <div className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute -top-48 left-[8%] h-[500px] w-[500px] rounded-full bg-blue-500 opacity-20 blur-[120px]" />
         <div className="absolute -bottom-48 right-[8%] h-[500px] w-[500px] rounded-full bg-purple-500 opacity-20 blur-[140px]" />
@@ -249,7 +249,7 @@ export default function NewCommitmentPage() {
             </p>
           </div>
           <div className="text-right text-sm text-white/60">
-            <p>Baywater is not investment advice.</p>
+            <p>Precept Solutions is not investment advice.</p>
             <p className="text-xs">AI analysis is based on your historical trading data.</p>
           </div>
         </div>
@@ -461,7 +461,7 @@ export default function NewCommitmentPage() {
               <div className="flex items-start gap-2">
                 <Info className="h-4 w-4 text-blue-400 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-blue-300">
-                  <strong>Important:</strong> Baywater is not investment advice. This commitment system is designed to help you follow your own trading rules and analyze your process quality. The AI analysis is based solely on your historical trading data and is intended for journaling and self-reflection only.
+                  <strong>Important:</strong> Precept Solutions is not investment advice. This commitment system is designed to help you follow your own trading rules and analyze your process quality. The AI analysis is based solely on your historical trading data and is intended for journaling and self-reflection only.
                 </p>
               </div>
             </div>
@@ -535,7 +535,7 @@ export default function NewCommitmentPage() {
                       Your trading plan has been locked at {lockedAt}. This commitment cannot be edited.
                     </p>
                     <p className="text-xs text-emerald-100 mt-2">
-                      After you execute this trade, Baywater will compare your actual execution with this original plan.
+                      After you execute this trade, Precept Solutions will compare your actual execution with this original plan.
                     </p>
                   </div>
                 </div>
@@ -578,7 +578,7 @@ export default function NewCommitmentPage() {
               <div>
                 <p className="font-medium">Execute Your Trade</p>
                 <p className="text-sm text-white/80 mt-1">
-                  Trade as normal. Baywater will automatically match your trade to this commitment.
+                  Trade as normal. Precept Solutions will automatically match your trade to this commitment.
                 </p>
               </div>
             </div>
@@ -588,7 +588,7 @@ export default function NewCommitmentPage() {
               <div>
                 <p className="font-medium">Get Process Analysis</p>
                 <p className="text-sm text-white/80 mt-1">
-                  After your trade completes, Baywater will show you how well your actual execution matched your original plan.
+                  After your trade completes, Precept Solutions will show you how well your actual execution matched your original plan.
                 </p>
               </div>
             </div>
@@ -597,7 +597,7 @@ export default function NewCommitmentPage() {
               <p className="text-sm font-medium text-white/90">Why This Matters</p>
               <p className="text-sm text-white/80 mt-2">
                 Most traders rewrite history after the fact, justifying bad trades that happened to work out.
-                Baywater's commitment system helps you <strong>stop rewriting history</strong> and see what you
+                Precept Solutions' commitment system helps you <strong>stop rewriting history</strong> and see what you
                 actually believed when you clicked buy.
               </p>
             </div>

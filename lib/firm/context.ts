@@ -3,7 +3,7 @@
  * RLS remains the enforcement layer; this only scopes the request.
  *
  * Three distinct identities:
- *   * global admin — the single Baywater admin account (public.baywater_admins)
+ *   * global admin — the single Precept Solutions admin account (public.baywater_admins)
  *   * coach        — an active organization_memberships row with role 'coach'
  *   * student      — unchanged
  *

@@ -19,7 +19,7 @@ const navItems = [
   { name: "Home", href: "/", icon: Home },
 ]
 
-/** Global-organization-management nav entry — the single Baywater admin only. */
+/** Global-organization-management nav entry — the single Precept Solutions admin only. */
 const globalAdminNavItems = [
   { name: "Create Organization", href: "/firm/new", icon: Plus },
 ]
@@ -28,7 +28,7 @@ export function Sidebar() {
   const pathname = usePathname()
   const [isCollapsed, setIsCollapsed] = useState(false)
 
-  // Global organization management is reserved for the single Baywater admin
+  // Global organization management is reserved for the single Precept Solutions admin
   // account. The check reads the caller's OWN admin row through RLS
   // (baywater_admins_select_own), so it can never be spoofed from the client;
   // the creation RPCs enforce the same rule server-side. Fails closed: any
@@ -76,9 +76,9 @@ export function Sidebar() {
         {!isCollapsed && (
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 bg-accent rounded-sm flex items-center justify-center">
-              <span className="text-white font-bold text-sm">B</span>
+              <span className="text-white font-bold text-sm">P</span>
             </div>
-            <span className="font-semibold text-text-primary">Baywater</span>
+            <span className="font-semibold text-text-primary">Precept Solutions</span>
           </div>
         )}
         <Button

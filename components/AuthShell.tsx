@@ -4,7 +4,7 @@ import { ShieldCheck } from "lucide-react";
 /**
  * Shared visual shell for the auth pages (login, forgot password, reset
  * password). Renders the dark glassmorphism background, ambient orbs, and
- * the Baywater brand header, then renders the page's card as children.
+ * the Precept Solutions brand header, then renders the page's card as children.
  */
 export function AuthShell({
   title,

@@ -105,7 +105,7 @@ export default function ResetPasswordPage() {
   }, [password, confirmPassword]);
 
   return (
-    <AuthShell title="Baywater" subtitle="Reset your password">
+    <AuthShell title="Precept Solutions" subtitle="Reset your password">
       {status === "checking" && (
         <Card className="border border-white/10 bg-white/5 backdrop-blur-xl">
           <CardContent className="flex items-center justify-center gap-2 py-8">
